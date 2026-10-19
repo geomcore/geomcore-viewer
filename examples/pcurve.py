@@ -22,11 +22,11 @@ args = parser.parse_args()
 
 view = gv.Viewer("Curves on a cylinder", spawn=args.save is None)
 
-Y = Cylinder(Point3D.origin(), Vector3D.z(), 2.0)
+Y = Cylinder(Point3D.origin(), Vector3D.unit_z(), 2.0)
 cyl = view.add(Y, label="Y", v=(-1.0, 4.0))
 
 # A circle of the cylinder, handed over as its (u, v) image: the line v = 1.5.
-ring = Circle3D(Point3D(0.0, 0.0, 1.5), Vector3D.z(), 2.0)
+ring = Circle3D(Point3D(0.0, 0.0, 1.5), Vector3D.unit_z(), 2.0)
 view.pcurve(ring.parametrize_on(Y), on=cyl, label="ring")
 
 # A helix: the line v = u / 4 in (u, v). Unbounded, it is drawn where it crosses the window v ∈ [-1, 4].

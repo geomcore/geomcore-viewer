@@ -5,7 +5,7 @@ It speaks scene protocol v2 ([`protocol/SCENE.md`](https://github.com/geomcore/g
 
 ```toml
 [dependencies]
-geomcore-viewer = { version = "0.2", features = ["geomcore"] }   # the feature needs geomcore 0.32
+geomcore-viewer = { version = "0.3", features = ["geomcore"] }   # the feature needs geomcore 0.36
 ```
 
 ```rust

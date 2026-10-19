@@ -11,13 +11,12 @@ import webbrowser
 from pathlib import Path
 from urllib.parse import quote
 
-from .adapt import SURFACE_TYPES, as_vec, indexed, scene_extent, to_objects, uv_curve, with_window
+from .adapt import PALETTE, SURFACE_TYPES, as_vec, indexed, scene_extent, to_objects, uv_curve, with_window
 from .server import PROTOCOL, default_url
 from .spawn import ensure_server, probe, refused_hint
 
 # Categorical palette: every colour has contrast ≥ 3:1 on the viewer's light (#f7f8fa) and
 # dark (#16181d) backgrounds (spec §3.5, tests/test_viewer.py), so it reads on a projector.
-PALETTE = ("#d1495b", "#00798c", "#c47f00", "#3a7cc2", "#8a5cc2", "#5c8a00", "#b5448f", "#6b7a8f")
 STYLE_KEYS = ("color", "width", "dashed", "opacity")
 EXTRA_KEYS = frozenset({"foci", "center", "axes", "asymptotes", "directrix", "vertex", "isolines", "wire"})
 VIEWS = ("auto", "2d", "3d")
@@ -164,7 +163,7 @@ class Viewer:
     def _build(self, part: dict, style: dict, group, extras: dict, u, v) -> dict:
         geom = part["geom"]
         object_id = part.get("key") or part["label"] or self._auto_id()
-        if geom["type"] in SURFACE_TYPES:
+        if geom["type"] in SURFACE_TYPES and "window" not in geom:
             others = (o["geom"] for o in self.objects.values() if o["id"] != object_id)
             geom = with_window(geom, scene_extent(others), u, v)
         obj: dict = {"id": object_id, "geom": geom}
@@ -172,11 +171,15 @@ class Viewer:
             obj["label"] = part["label"]
         if part.get("source"):
             obj["source"] = part["source"]
+        group = group or part.get("group")
         if group:
             obj["group"] = group
         if geom["type"] != "note":
             previous = self.objects.get(object_id, {}).get("style", {})
-            obj["style"] = {"color": previous.get("color") or self._color(), **style}
+            part_style = part.get("style", {})
+            color = previous.get("color") or part_style.get("color") or self._color()
+            applied = {k: x for k, x in style.items() if k not in part.get("keeps_style", ())}
+            obj["style"] = {**part_style, "color": color, **applied}
         if extras:
             obj["extras"] = dict(extras)
         if part.get("meta"):

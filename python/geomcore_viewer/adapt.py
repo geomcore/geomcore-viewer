@@ -17,11 +17,17 @@ from collections.abc import Iterable
 from .sampling import sample_curve, sample_surface_grid
 
 TAU = 2.0 * math.pi
+PALETTE = ("#d1495b", "#00798c", "#c47f00", "#3a7cc2", "#8a5cc2", "#5c8a00", "#b5448f", "#6b7a8f")
+# Outside the cycled PALETTE, so no object is ever auto-coloured like a projection's highlights.
+ACCENT = "#e8590c"
+QUERY_POINT_COLOR = "#4b5563"
 CHECK_TOL = 1e-9
 _CHECK_T = 0.7
 _CHECK_UV = (0.7, 0.3)
 _BSPLINE_SEGMENTS = 256
 _BSPLINE_GRID = 48
+_WINDOW_MIN_HALF_SIZE = 1.0
+_WINDOW_DISTANCE_FACTOR = 1.5
 
 CURVES = frozenset({"Line3D", "Line2D", "Circle3D", "Circle2D", "Ellipse3D", "Parabola3D", "Hyperbola3D"})
 SURFACES = frozenset({"Plane", "Cylinder", "Cone", "Sphere", "Torus"})
@@ -251,6 +257,8 @@ def _single(obj, label: str | None, u, v) -> list[dict]:
     elif name == "BSplineCurve3D":
         t0, t1 = obj.bounds()
         geom = {"type": "polyline", "points": sample_curve(obj.eval_point, t0, t1, _BSPLINE_SEGMENTS)}
+    elif name in TRIMMED_CURVES:
+        geom = _sampled_range(obj, *obj.bounds())["geom"]
     elif name == "BSplineSurface":
         if u is None or v is None:
             raise TypeError("BSplineSurface has no domain getter in geomcore yet: pass u=(u0, u1) and v=(v0, v1)")
@@ -347,10 +355,10 @@ def _labelled(items: list, label: str | None, u, v, tag: str | None = None) -> l
     return parts
 
 
-def _note(text: str, label: str | None, level: str = "info") -> dict:
+def _note(text: str, label: str | None, level: str = "info", kind: str = "note") -> dict:
     return {
         "label": None,
-        "key": f"{label}·note" if label else None,
+        "key": f"{label}·{kind}" if label else None,
         "geom": {"type": "note", "text": f"{label}: {text}" if label else text, "level": level},
     }
 
@@ -377,9 +385,294 @@ def _result(tag: str, payload, label: str | None, u, v) -> list[dict]:
     return parts
 
 
+# --- projection results (geomcore >= 0.36) ------------------------------------
+CURVE_PROJECTIONS = frozenset({"CurveProjection", "CurveProjection2D"})
+PROJECTIONS = CURVE_PROJECTIONS | {"SurfaceProjection"}
+
+
+def _surface_window_bounds(name: str, result, u, v) -> tuple[tuple | None, tuple | None, float]:
+    """Parameter bounds around the closest point for the directions that need them, and the
+    half-size used for them. Sampled surfaces need both directions; analytic ones only the
+    infinite ones (``with_window`` fills the periodic ones with a full period)."""
+    half = max(_WINDOW_MIN_HALF_SIZE, _WINDOW_DISTANCE_FACTOR * float(result.distance))
+    bounds_u = u if u is not None else (result.u - half, result.u + half)
+    bounds_v = v if v is not None else (result.v - half, result.v + half)
+    if name == "BSplineSurface":
+        return bounds_u, bounds_v, half
+    infinite = _INFINITE.get(name.lower(), ())
+    return (bounds_u if "u" in infinite or u is not None else None), (
+        bounds_v if "v" in infinite or v is not None else None), half
+
+
+def _projection(result, label: str | None, u=None, v=None) -> list[dict]:
+    """The target, the query point, the closest point and a dashed segment between them, in one group.
+
+    The recipe styles (accent colour, dashed connector) are defaults: ``color=`` or ``dashed=``
+    given to ``add`` override them. A surface target is windowed around the closest point unless
+    ``u=`` / ``v=`` say otherwise.
+    """
+    if label is None:
+        label = f"projection on {type(result.target).__name__}"
+    if type(result).__name__ == "SurfaceProjection":
+        name = type(result.target).__name__
+        bounds_u, bounds_v, half = _surface_window_bounds(name, result, u, v)
+        [target] = _single(result.target, None, bounds_u, bounds_v)
+        if name in _INFINITE or name.lower() in _INFINITE:
+            target["geom"] = with_window(target["geom"], half, bounds_u, bounds_v)
+        params = [result.u, result.v]
+    else:
+        [target] = _single(result.target, None, None, None)
+        params = [result.parameter]
+    query, closest = as_vec(result.query_point), as_vec(result.point)
+    closest_meta = {"tag": "projection", "params": _numeric(params)}
+    accent = {"color": ACCENT}
+    neutral = {"color": QUERY_POINT_COLOR}
+    return [
+        {**target, "key": f"{label}·target", "group": label},
+        {"label": "query point", "key": f"{label}·query", "group": label, "style": neutral,
+         "geom": {"type": "point", "p": query}},
+        {"label": f"closest point, d = {float(result.distance):.6g}", "key": f"{label}·closest", "group": label,
+         "style": accent, "meta": closest_meta, "geom": {"type": "point", "p": closest}},
+        {"label": None, "key": f"{label}·distance", "group": label, "style": {**accent, "dashed": True},
+         "geom": {"type": "polyline", "points": [query, closest]}},
+    ]
+
+
+# --- intersection and extrema results (geomcore >= 0.36) ----------------------
+INTERSECTIONS = frozenset({
+    "CurveCurveIntersection", "CurveCurveIntersection2D", "CurveSurfaceIntersection", "SurfaceSurfaceIntersection",
+})
+TRIMMED_CURVES = frozenset({"TrimmedCurve3D", "TrimmedCurve2D"})
+OPERAND_OPACITY = 0.45
+_RANGE_SEGMENTS = 64
+# Twelve box segments as one polyline over the corner indices (bit 0 is x, bit 1 is y, bit 2 is z);
+# two segments are walked twice.
+_BOX_PATH = (0, 1, 3, 2, 0, 4, 5, 1, 3, 7, 6, 2, 6, 4, 6, 7, 5)
+
+
+_WINDOW_DEFAULT_HALF_SIZE = 5.0
+_WINDOW_SPAN_FACTOR = 0.75
+_REFERENCE_POINT_LIMIT = 24
+_SAMPLES_AROUND = 8
+
+
+def _geometry_reference_points(geom: dict) -> list[list[float]]:
+    """A few points on a protocol geometry (None-free, finite), to size windows around."""
+    kind = geom["type"]
+    if kind == "point":
+        return [geom["p"]]
+    if kind == "polyline":
+        return list(geom["points"])
+    if kind == "mesh":
+        return list(geom["vertices"])
+    if kind == "line":
+        return [geom["o"]]
+    if kind in ("circle", "ellipse"):
+        return [eval_curve(geom, TAU * i / _SAMPLES_AROUND) for i in range(_SAMPLES_AROUND)]
+    if kind in ("parabola", "hyperbola"):
+        return [eval_curve(geom, 0.0)]
+    if kind in ("sphere", "torus"):
+        low, high = _FULL_PERIOD[kind]["v"]
+        return [eval_surface(geom, TAU * i / _SAMPLES_AROUND, low + (high - low) * j / 4)
+                for i in range(_SAMPLES_AROUND) for j in range(5)]
+    return []
+
+
+def _operand_window(operand, reference_points, user_u, user_v) -> tuple[tuple | None, tuple | None]:
+    """Parameter bounds, for the unbounded directions of a surface operand, around the result.
+
+    Each reference point is projected onto the operand; a direction spans the projections plus a margin,
+    or a fixed half-size when there is nothing to project. Independent of anything else in the scene.
+    A user's ``u`` / ``v`` wins.
+    """
+    kind = type(operand).__name__.lower()
+    point_class = type(operand.eval_point(0.0, 0.0))
+    step = max(1, math.ceil(len(reference_points) / _REFERENCE_POINT_LIMIT))
+    projections = [operand.project_point(point_class(*p)) for p in reference_points[::step]]
+    bounds = {}
+    for direction, user in (("u", user_u), ("v", user_v)):
+        if user is not None:
+            bounds[direction] = user
+        elif direction in _INFINITE[kind]:
+            values = [getattr(projection, direction) for projection in projections]
+            low, high = (min(values), max(values)) if values else (0.0, 0.0)
+            half = _WINDOW_SPAN_FACTOR * (high - low) if high > low else _WINDOW_DEFAULT_HALF_SIZE
+            bounds[direction] = ((low + high) / 2 - half, (low + high) / 2 + half)
+        else:
+            bounds[direction] = None
+    return bounds["u"], bounds["v"]
+
+
+def _operands(result, label: str, reference_points: list, u, v) -> list[dict]:
+    """Both intersected shapes, translucent so the result stays visible inside them. Unbounded
+    surfaces are windowed around the result and the bounded operand."""
+    operands = (result.first, result.second)
+    parts = []
+    for name, obj in zip(("first", "second"), operands):
+        [part] = _single(obj, None, u, v)
+        parts.append({**part, "key": f"{label}·{name}", "group": label, "style": {"opacity": OPERAND_OPACITY}})
+    points = list(reference_points)
+    for part in parts:
+        if not _INFINITE.get(part["geom"]["type"]):
+            points += _geometry_reference_points(part["geom"])
+    for obj, part in zip(operands, parts):
+        if _INFINITE.get(part["geom"]["type"]) and "window" not in part["geom"]:
+            bounds_u, bounds_v = _operand_window(obj, points, u, v)
+            part["geom"] = with_window(part["geom"], _WINDOW_DEFAULT_HALF_SIZE, bounds_u, bounds_v)
+    return parts
+
+
+def _sampled_range(curve, first: float, last: float) -> dict:
+    points = [as_vec(curve.eval_point(first + (last - first) * i / _RANGE_SEGMENTS))
+              for i in range(_RANGE_SEGMENTS + 1)]
+    return {"label": None, "geom": {"type": "polyline", "points": points}}
+
+
+def _curve_operand(result):
+    """The curve of a curve-surface result, whichever side the receiver was: the ``curve`` property
+    when geomcore provides it, else the operand that is not a surface."""
+    curve = getattr(result, "curve", None)
+    if curve is not None:
+        return curve
+    first_is_surface = type(result.first).__name__ in SURFACES | {"BSplineSurface"}
+    return result.second if first_is_surface else result.first
+
+
+def _overlap_part(result, overlap, key: str, label: str) -> dict:
+    """The operand over the overlap's parameter range: a curve-curve overlap carries one range per
+    operand (the first operand's when it is bounded, else the second's); a curve in a surface is a
+    plain ``(first, last)`` range of the curve. Unbounded everywhere draws the whole first operand."""
+    if isinstance(overlap, (tuple, list)):
+        candidates = ((_curve_operand(result), tuple(overlap)),)
+    else:
+        candidates = ((result.first, overlap.first_range), (result.second, overlap.second_range))
+    for operand, bounds in candidates:
+        if all(math.isfinite(b) for b in bounds):
+            part = _sampled_range(operand, *bounds)
+            break
+    else:
+        [part] = _single(_curve_operand(result) if isinstance(overlap, (tuple, list)) else result.first, None, None, None)
+    return {**part, "key": key, "group": label, "style": {"color": ACCENT}, "keeps_style": ("opacity",)}
+
+
+def _box_part(region, key: str, label: str) -> dict | None:
+    low, high = as_vec(region.min_corner), as_vec(region.max_corner)
+    if not all(math.isfinite(c) for c in (*low, *high)):
+        return None
+    corners = [[(high if index >> axis & 1 else low)[axis] for axis in range(3)] for index in range(8)]
+    return {"label": None, "key": key, "group": label, "style": {"color": ACCENT, "dashed": True}, "keeps_style": ("opacity",),
+            "geom": {"type": "polyline", "points": [corners[i] for i in _BOX_PATH]}}
+
+
+def _param(value):
+    return None if value is None else _numeric(value)
+
+
+def _hit_params(hit) -> list:
+    if hasattr(hit, "curve_parameter"):
+        return [_param(hit.curve_parameter), _param(hit.surface_parameters)]
+    return [_param(hit.first_parameter), _param(hit.second_parameter)]
+
+
+def _result_point(point, key: str, label: str, text: str | None, meta: dict | None = None) -> dict:
+    part = {"label": text, "key": key, "group": label, "style": {"color": ACCENT}, "keeps_style": ("opacity",),
+            "geom": {"type": "point", "p": as_vec(point)}}
+    if meta:
+        part["meta"] = meta
+    return part
+
+
+def _reason_text(reason) -> str:
+    if reason is None:
+        return ""
+    return ": " + str(getattr(reason, "name", reason)).lower().replace("_", " ")
+
+
+def _completeness_parts(result, label: str) -> list[dict]:
+    completeness = result.completeness
+    status = completeness.status.name
+    if status == "INCOMPLETE":
+        reason = _reason_text(completeness.reason)
+        parts = [_note(f"incomplete, some intersections may be missing{reason}", label, "warn", "status")]
+        boxes = (_box_part(region, f"{label}·region{i}", label) for i, region in enumerate(completeness.regions, 1))
+        return parts + [box for box in boxes if box is not None]
+    if status == "SAMPLED":
+        return [_note("sampled, so a very small intersection could be missed", label, "info", "status")]
+    return []
+
+
+def _intersection(result, label: str | None, u=None, v=None) -> list[dict]:
+    """Both operands translucent, the result in the accent colour, and notes on the method and completeness.
+
+    One group per result, named after the operands unless ``label`` is given. Recipe styles are
+    defaults: ``color=`` or ``dashed=`` given to ``add`` override them; ``opacity=`` applies to the
+    operands only.
+    """
+    first_name, second_name = type(result.first).__name__, type(result.second).__name__
+    label = label or f"{first_name} × {second_name}"
+    parts = []
+    for i, piece in enumerate(getattr(result, "curves", ()), start=1):
+        [curve] = _single(piece.curve, None, None, None)
+        parts.append({**curve, "key": f"{label}·curve{i}", "group": label, "style": {"color": ACCENT},
+                      "keeps_style": ("opacity",), "label": "tangent" if piece.tangent else None})
+    for i, hit in enumerate(getattr(result, "hits", ()), start=1):
+        text = "tangent" if hit.multiplicity >= 2 else None
+        parts.append(_result_point(hit.point, f"{label}·hit{i}", label, text,
+                                   {"tag": "hit", "params": _hit_params(hit)}))
+    for i, point in enumerate(getattr(result, "contact_points", ()), start=1):
+        parts.append(_result_point(point, f"{label}·contact{i}", label, "tangent"))
+    for i, overlap in enumerate(getattr(result, "overlaps", ()), start=1):
+        parts.append(_overlap_part(result, overlap, f"{label}·overlap{i}", label))
+    status_parts = _completeness_parts(result, label)
+    parts += [p for p in status_parts if p["geom"]["type"] != "note"]
+    reference_points = [point for p in parts for point in _geometry_reference_points(p["geom"])]
+    notes = [p for p in status_parts if p["geom"]["type"] == "note"]
+    if not result:
+        notes.insert(0, _note(EMPTY_NOTES["empty"], label))
+    if hasattr(result, "is_coincident") and result.is_coincident():
+        notes.insert(0, _note(INFO_NOTES["coincident"], label, "info", "coincident"))
+    notes.insert(0, _note(f"method: {result.method.name.lower()}", label, "info", "method"))
+    return _operands(result, label, reference_points, u, v) + parts + notes
+
+
+def _extrema(result, label: str | None, u=None, v=None) -> list[dict]:
+    """Both curves translucent and a dashed segment joining the two points of each minimum."""
+    first_name, second_name = type(result.first).__name__, type(result.second).__name__
+    label = label or f"{first_name} × {second_name} extrema"
+    parts = []
+    for i, minimum in enumerate(result.minima, start=1):
+        ends = [as_vec(result.first.eval_point(minimum.first_parameter)),
+                as_vec(result.second.eval_point(minimum.second_parameter))]
+        parts.append({"label": f"d = {float(minimum.distance):.6g}", "key": f"{label}·minimum{i}", "group": label,
+                      "style": {"color": ACCENT, "dashed": True}, "keeps_style": ("opacity",),
+                      "meta": {"tag": "extremum", "params": [_param(minimum.first_parameter),
+                                                             _param(minimum.second_parameter)]},
+                      "geom": {"type": "polyline", "points": ends}})
+    if not result.minima:
+        parts.append(_note(EMPTY_NOTES["empty"], label))
+    reference_points = [point for p in parts for point in _geometry_reference_points(p["geom"])]
+    return _operands(result, label, reference_points, u, v) + parts
+
+
+_RESULT_OBJECTS = {
+    **{name: _projection for name in PROJECTIONS},
+    **{name: _intersection for name in INTERSECTIONS},
+    "CurveCurveExtrema": _extrema,
+}
+
+
+def _result_object(obj, label: str | None, u=None, v=None) -> list[dict] | None:
+    """Parts for a geomcore result object, dispatched on its class name; None for anything else."""
+    recipe = _RESULT_OBJECTS.get(type(obj).__name__)
+    return None if recipe is None else recipe(obj, label, u, v)
+
+
 def to_objects(obj, label: str | None = None, *, u=None, v=None) -> list[dict]:
-    """Protocol parts for one ``add`` argument: a geomcore object, a ``(tag, payload)``
-    intersection result, or a list/tuple of those."""
+    """Protocol parts for one ``add`` argument: a geomcore object, a result object such as a
+    projection, a ``(tag, payload)`` intersection result, or a list/tuple of those."""
+    parts = _result_object(obj, label, u, v)
+    if parts is not None:
+        return parts
     if _is_result(obj):
         return _result(obj[0], obj[1], label, u, v)
     if type(obj).__name__ in GEOMETRY:

@@ -12,10 +12,8 @@ use geomcore_viewer::{Opts, Viewer};
 
 /// Where two curves meet, through geomcore's one entry point for exact intersections.
 fn meet(a: impl Into<Curve3D>, b: impl Into<Curve3D>) -> Vec<Point3D> {
-    match a.into().intersect(&b.into(), Tolerance::DEFAULT) {
-        CurveCurveIntersection::Points(hits) => hits.iter().map(|hit| hit.point).collect(),
-        _ => vec![],
-    }
+    let result: CurveCurveIntersection = a.into().intersect(&b.into(), Tolerance::DEFAULT);
+    result.hits().iter().map(|hit| hit.point).collect()
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

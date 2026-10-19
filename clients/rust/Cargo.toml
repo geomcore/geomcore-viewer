@@ -1,6 +1,6 @@
 [package]
 name = "geomcore-viewer"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 description = "Rust client for the geomcore-viewer live browser viewer (scene protocol v2)."
@@ -15,7 +15,7 @@ geomcore = ["dep:geomcore"]
 
 [dependencies]
 serde_json = "1"
-geomcore = { version = "0.32", optional = true }
+geomcore = { version = "0.36", optional = true }
 
 [[example]]
 name = "conics"

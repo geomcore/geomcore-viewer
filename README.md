@@ -13,16 +13,18 @@ import geomcore_viewer as gv
 
 view = gv.Viewer("Ellipse ∩ circle")
 E = Ellipse3D.from_frame(Frame3D.world(), 3.0, 2.0)
-C = Circle3D(Point3D(2, 1, 0), Vector3D.z(), 1.5)
+C = Circle3D(Point3D(2, 1, 0), Vector3D.unit_z(), 1.5)
 
 view.add(E, label="E")
 view.add(C, label="C")
-view.add(C.intersect_ellipse(E), label="P")   # → P₁, P₂
+view.add(C.intersect(E), label="P")   # → P₁, P₂
 ```
 
-- **One verb.** `add` takes geomcore curves, surfaces and points, intersection
-  results as returned (`("points", …)`, `("two_circles", …)`, `("empty", None)` →
-  a note "P: ∅"), and lists of those.
+- **One verb.** `add` takes geomcore curves, surfaces and points, the result
+  objects of projections, intersections and curve extrema (see
+  [Drawing results](#drawing-results)), and lists of those. With geomcore ≤ 0.35
+  it also takes the older `(tag, payload)` intersection results as returned
+  (`("points", …)`, `("empty", None)` → a note "P: ∅").
 - **Live, incremental.** The first `add` starts a background server and opens
   the tab; later runs reuse it. Re-running a script swaps the scene in place;
   inside one process (`pdb`, IPython, Jupyter) every `gv.add(x)` lands in the
@@ -42,7 +44,7 @@ pip install geomcore-viewer        # stdlib only; the built viewer ships in the 
 ```
 
 The viewer itself has no dependencies, but the quick-start above and the scripts in
-`examples/` build their objects with geomcore: `pip install geomcore`, or, from a
+`examples/` build their objects with geomcore 0.36 or later: `pip install "geomcore>=0.36"`, or, from a
 source checkout, `PYTHONPATH=../geomcore/geomcore-py` (add `python` when running
 from this repo, as in the Development section).
 
@@ -75,6 +77,45 @@ The server only answers requests addressed to its own `127.0.0.1:<port>` or
 `localhost:<port>` (a browser safety rule), so to watch a remote machine's
 viewer through SSH keep the same port on both ends:
 `ssh -L 8765:127.0.0.1:8765 <host>`, then open `http://127.0.0.1:8765`.
+
+## Drawing results
+
+With geomcore 0.36 or later, pass a result object straight to `add`; there is
+nothing to unpack. Supported: `CurveProjection`, `CurveProjection2D`,
+`SurfaceProjection`, `CurveCurveIntersection`, `CurveCurveIntersection2D`,
+`CurveSurfaceIntersection`, `SurfaceSurfaceIntersection` and
+`CurveCurveExtrema`.
+
+```python
+from geomcore import Frame3D, Point3D, Vector3D
+from geomcore.curves import Circle3D, Ellipse3D
+import geomcore_viewer as gv
+
+view = gv.Viewer("Results")
+E = Ellipse3D.from_frame(Frame3D.world(), 3.0, 2.0)
+C = Circle3D(Point3D(2, 1, 0), Vector3D.unit_z(), 1.5)
+
+view.add(E.project_point(Point3D(4, 3, 0)), label="closest")  # projection
+view.add(C.intersect(E), label="P")                           # intersection
+```
+
+Each result draws as one group named after its label (or after the operands
+when there is none), the same group every time the script re-runs:
+
+- the operands are faded and the result is drawn in an accent colour no
+  automatic colour uses;
+- a projection shows the query point, the closest point and a dashed connector
+  labelled with the distance; the extrema of two curves show a dashed segment
+  per minimum labelled `d = …`;
+- an intersection shows its hit points (tangent hits are labelled), curves and
+  overlaps, and a note with the method used (`method: …`) or `∅` when empty;
+- a result that is not complete says so: a note with the reason, and a dashed
+  wireframe box around each region that was not resolved;
+- unbounded surfaces (planes, cylinders, cones) are windowed around the result
+  instead of the whole scene.
+
+Options you pass to `add` (`color=`, `dashed=`, `u=`, `v=`, …) win over these
+defaults; `opacity=` applies to the operands.
 
 ## The page
 
@@ -112,7 +153,7 @@ surface in 3D; hovering the surface or a pcurve in 3D puts one in the pane.
 ## Rust
 
 `cargo add geomcore-viewer --features geomcore` (crates.io; the feature takes
-geomcore 0.32). `clients/rust` is the same client for Rust programs: `Viewer::add`, labels,
+geomcore 0.36). `clients/rust` is the same client for Rust programs: `Viewer::add`, labels,
 groups, runs and surface windows work as in Python, and with the `geomcore`
 cargo feature geomcore's curves, surfaces, points and `parametrize_on` results
 go straight to `add`. Rust never starts the server: run
