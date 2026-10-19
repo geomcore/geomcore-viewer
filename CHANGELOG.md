@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.3.0 - 2026-10-15
+## 0.3.0 - 2026-10-19
 
 Needs geomcore 0.36 or later for the result classes below; everything else,
 including the `(tag, payload)` intersection results, still works with
@@ -23,6 +23,7 @@ geomcore 0.35 and earlier.
 - Parts built by `_build` accept a group and a style of their own.
 - `PALETTE` moved to `geomcore_viewer.adapt`; `geomcore_viewer.viewer` still
   re-exports it.
+- The Rust client's `geomcore` feature takes geomcore 0.36 (was 0.32).
 
 ## 0.2.0
 

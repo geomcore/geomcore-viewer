@@ -44,7 +44,7 @@ pip install geomcore-viewer        # stdlib only; the built viewer ships in the 
 ```
 
 The viewer itself has no dependencies, but the quick-start above and the scripts in
-`examples/` build their objects with geomcore: `pip install geomcore`, or, from a
+`examples/` build their objects with geomcore 0.36 or later: `pip install "geomcore>=0.36"`, or, from a
 source checkout, `PYTHONPATH=../geomcore/geomcore-py` (add `python` when running
 from this repo, as in the Development section).
 
@@ -153,7 +153,7 @@ surface in 3D; hovering the surface or a pcurve in 3D puts one in the pane.
 ## Rust
 
 `cargo add geomcore-viewer --features geomcore` (crates.io; the feature takes
-geomcore 0.32). `clients/rust` is the same client for Rust programs: `Viewer::add`, labels,
+geomcore 0.36). `clients/rust` is the same client for Rust programs: `Viewer::add`, labels,
 groups, runs and surface windows work as in Python, and with the `geomcore`
 cargo feature geomcore's curves, surfaces, points and `parametrize_on` results
 go straight to `add`. Rust never starts the server: run
