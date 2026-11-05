@@ -49,8 +49,12 @@ function profileSegments(profile: ProfileCurve, span: number, tol: number): numb
       return arcSegments(span, profile.r, tol);
     case "ellipse":
       return arcSegments(span, Math.max(profile.a, profile.b), tol);
-    case "polyline":
-      return Math.min(MAX_SEGMENTS, Math.max(1, Math.ceil(Math.abs(span))));
+    case "polyline": {
+      // One segment per polyline segment the span covers.
+      const segments = profile.points.length - 1;
+      const parameters = profile.range ? Math.abs(profile.range[1] - profile.range[0]) : segments;
+      return Math.min(MAX_SEGMENTS, Math.max(1, Math.ceil((Math.abs(span) * segments) / parameters)));
+    }
     default:
       return Math.min(MAX_SEGMENTS, Math.max(MIN_PER_TURN, Math.ceil(Math.abs(span) * 8)));
   }

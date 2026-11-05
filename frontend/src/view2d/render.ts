@@ -1,6 +1,6 @@
 import { Rect, clipCurve2D, expandRect } from "../geom/clip";
 import { evalCurve } from "../geom/curves";
-import { curveExtras } from "../geom/extras";
+import { curveExtras, dataExtras } from "../geom/extras";
 import { inPlaneZ0 } from "../geom/planar";
 import { Sampled, dashPolyline, sampleAdaptive } from "../geom/sample";
 import { arrowPolylines } from "../geom/tessellate";
@@ -174,6 +174,16 @@ export function buildDrawList(objects: Iterable<SceneObject>, cam: Camera2D, opt
     } else if (g.type === "text") {
       const textColor = o.style?.color ? color : opts.palette.text;
       out.texts.push({ key: `t:${o.id}`, id: o.id, text: g.text, at: screen(g.at), color: textColor, kind: "text" });
+    }
+    if (o.extras) {
+      // Extras the client computed from the exact object: control polygons, knot points, combs, normals.
+      const data = dataExtras(o.extras);
+      const faded = mixHex(color, opts.palette.bg, EXTRA_MIX);
+      const paths = (data.paths ?? []).map((path) => path.map(screen));
+      if (paths.length) out.strokes.push({ id: o.id, extra: true, paths: dash(paths), color: faded, width: EXTRA_PX * ws, alpha });
+      for (const x of data.points) {
+        if (insideRect(clip, x.p)) out.dots.push({ id: o.id, at: screen(x.p), color: faded, radius: EXTRA_DOT_PX * ws, alpha, hollow: true });
+      }
     }
   }
   const rank = (t: TextItem) => (isLit(t.id) ? -1 : KIND_ORDER[t.kind]);

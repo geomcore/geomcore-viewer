@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import math
+import numbers
 import urllib.error
 import urllib.request
 import uuid
@@ -26,6 +27,8 @@ EXTRA_KEYS = frozenset({
 })
 VIEWS = ("auto", "2d", "3d")
 DEFAULT_COLORMAP = "viridis"
+# The colour maps the page knows (frontend/src/ui/colormap.ts).
+COLORMAPS = ("viridis", "plasma", "turbo", "coolwarm", "gray")
 
 _default: Viewer | None = None
 
@@ -113,20 +116,24 @@ class Viewer:
         ``knots`` (knot points), ``comb=scale`` (curvature comb); surface extras
         ``isolines``, ``wire``, ``normals=n``; ``u=``/``v=`` set a surface's
         parameter window. A result draws its operands faded, except any the
-        scene already shows; pass ``operands=False`` to leave all of them out.
-        Re-adding a ``label`` replaces what that label showed before.
+        scene already shows (equal value, windows aside): those it reuses, so
+        removing that object later removes it from the result's display too,
+        and an operand added after the result is drawn again. Pass
+        ``operands=False`` to leave all of them out. Re-adding a ``label``
+        replaces what that label showed before.
         """
         if not objs:
             raise TypeError("add() needs at least one object")
         parts: list[dict] = []
         for i, obj in enumerate(objs, start=1):
             part_label = label if len(objs) == 1 or label is None else indexed(label, i)
-            existing = [o["geom"] for o in self.objects.values()] + [p["geom"] for p in parts]
+            # Re-adding a label replaces its family, so that family's operands do not count as shown.
+            replaced = set(self._families.get((self._frame, label), ())) if label is not None else set()
+            existing = [o["geom"] for o in self.objects.values() if o["id"] not in replaced] + [p["geom"] for p in parts]
             object_parts = to_objects(obj, part_label, u=u, v=v, existing=existing, operands=operands)
-            data = extra_data(obj, options, u, v)
-            if data:
-                for part in object_parts:
-                    part["data"] = data
+            if len(object_parts) == 1:
+                # Poles, knots, combs and normals come from the exact object, once its window is known.
+                object_parts[0]["exact_object"] = obj
             parts += object_parts
         return self._commit(parts, label, group, options, u, v)
 
@@ -153,7 +160,7 @@ class Viewer:
         geom = {"type": "mesh", "vertices": [as_vec(p) for p in vertices], "indices": [int(i) for i in indices]}
         if values is not None:
             geom["values"] = _scalars(values, len(geom["vertices"]), "vertex")
-            geom["colormap"] = colormap or DEFAULT_COLORMAP
+            geom["colormap"] = _colormap(colormap, "mesh")
         elif colormap is not None:
             raise ValueError("mesh: colormap= needs values=")
         return self._commit([{"label": label, "geom": geom}], label, group, options)
@@ -164,12 +171,14 @@ class Viewer:
         colours each point through ``colormap`` (default "viridis"; also "plasma", "turbo",
         "coolwarm", "gray"); ``size=`` is its dot radius in pixels."""
         positions = [as_vec(p) for p in xyz]
+        if not positions:
+            raise ValueError("points: xyz is empty")
         geom = {"type": "points", "positions": positions}
         if size is not None:
             geom["size"] = float(size)
         if values is not None:
             geom["values"] = _scalars(values, len(positions), "point")
-            geom["colormap"] = colormap or DEFAULT_COLORMAP
+            geom["colormap"] = _colormap(colormap, "points")
         elif colormap is not None:
             raise ValueError("points: colormap= needs values=")
         return self._commit([{"label": label, "geom": geom}], label, group, options)
@@ -185,7 +194,7 @@ class Viewer:
         """One text, or a list: ``at`` may be a list of points and ``text`` a string (repeated)
         or a list of strings, zipped."""
         ats = list(at) if _points_listed(at) else [at]
-        texts = list(text) if isinstance(text, (list, tuple)) else [text]
+        texts = list(text) if _is_sequence(text) else [text]
         geoms = [{"type": "text", "at": as_vec(p), "text": str(t)} for p, t in _paired(ats, texts)]
         return self._commit(_labelled_geoms(geoms, label), label, group, options)
 
@@ -208,7 +217,8 @@ class Viewer:
     @contextmanager
     def batch(self):
         """Send everything added inside the block in one request, instead of one per call:
-        ``with view.batch(): view.arrow(...) ...``."""
+        ``with view.batch(): view.arrow(...) ...``. Batches nest (the outermost one sends). If the
+        block raises, what it added before the error is still sent, then the error propagates."""
         self._batch_depth += 1
         try:
             yield self
@@ -244,7 +254,9 @@ class Viewer:
         object_id = part.get("key") or part["label"] or self._auto_id()
         if self._frame is not None:
             object_id = f"{self._frame}·{object_id}"  # labels may repeat across frames; ids must not
-        if geom["type"] in SURFACE_TYPES and missing_window(geom):
+        # u= / v= narrow a surface even when its adapter already windowed it (a revolution's
+        # bounded profile, say).
+        if geom["type"] in SURFACE_TYPES and (missing_window(geom) or u is not None or v is not None):
             others = (o["geom"] for o in self.objects.values() if o["id"] != object_id)
             geom = with_window(geom, scene_extent(others), u, v)
         obj: dict = {"id": object_id, "geom": geom}
@@ -261,8 +273,12 @@ class Viewer:
             color = previous.get("color") or part_style.get("color") or self._color()
             applied = {k: x for k, x in style.items() if k not in part.get("keeps_style", ())}
             obj["style"] = {**part_style, "color": color, **applied}
-        if extras or part.get("data"):
-            obj["extras"] = {**extras, **(part.get("data") or {})}
+        computed = {}
+        if part.get("exact_object") is not None:
+            window = geom.get("window") or {}
+            computed = extra_data(part["exact_object"], extras, window.get("u", u), window.get("v", v))
+        if extras or computed:
+            obj["extras"] = {**extras, **computed}
         if part.get("meta"):
             obj["meta"] = part["meta"]
         if self._frame is not None:
@@ -427,18 +443,24 @@ def viewer() -> Viewer:
     return _default if _default is not None else Viewer()
 
 
+def _is_sequence(value) -> bool:
+    """A list, a tuple, a numpy array or any other sized iterable that is not a string."""
+    return not isinstance(value, (str, bytes)) and hasattr(value, "__len__") and hasattr(value, "__iter__")
+
+
 def _is_point(value) -> bool:
-    """A point or vector: a geomcore point/vector, or a 2- or 3-number sequence."""
+    """A point or vector: a geomcore point/vector, or a sequence of 2 or 3 numbers (numpy rows
+    and numpy scalars included, without importing numpy)."""
     if hasattr(value, "x") and not callable(value.x):
         return True
     if hasattr(value, "components"):
         return True
-    return isinstance(value, (list, tuple)) and len(value) in (2, 3) and all(isinstance(c, (int, float)) for c in value)
+    return _is_sequence(value) and len(value) in (2, 3) and all(isinstance(c, numbers.Real) for c in value)
 
 
 def _points_listed(value) -> bool:
-    """True for a list of points (`[(0, 0), (1, 1)]`) as opposed to one point."""
-    return isinstance(value, (list, tuple)) and len(value) > 0 and all(_is_point(v) for v in value)
+    """True for a list of points (`[(0, 0), (1, 1)]`, an (N, 3) array) as opposed to one point."""
+    return _is_sequence(value) and len(value) > 0 and all(_is_point(v) for v in value)
 
 
 def _polylines(points) -> list:
@@ -457,6 +479,16 @@ def _paired(left, right):
     if len(a) != len(b):
         raise TypeError(f"expected the same number of items, got {len(a)} and {len(b)}")
     return zip(a, b)
+
+
+def _colormap(name: str | None, method: str) -> str:
+    """The colour map to send: ``name``, or the default; an unknown name is a ValueError here
+    rather than a silent fallback in the page."""
+    if name is None:
+        return DEFAULT_COLORMAP
+    if name not in COLORMAPS:
+        raise ValueError(f"{method}: unknown colormap {name!r}; expected one of {', '.join(COLORMAPS)}")
+    return name
 
 
 def _scalars(values, count: int, unit: str) -> list[float]:

@@ -1,6 +1,6 @@
 // Scene protocol v2: types, validation and v1 migration. Mirrors protocol/SCENE.md.
 import { inPlaneZ0 } from "./geom/planar";
-import { CURVE_TYPES, Geom, SURFACE_TYPES, UvCurve } from "./geom/types";
+import { CURVE_TYPES, Geom, Range, SURFACE_TYPES, UvCurve } from "./geom/types";
 import type { Vec3 } from "./geom/vec";
 
 export const PROTOCOL = 2;
@@ -177,6 +177,9 @@ function parseSweepSurface(type: "extrusion" | "revolution", g: Record<string, u
   }
   const profile = parseGeom(p);
   if (typeof profile === "string") return `${type}.${profile}`;
+  if (p.type === "polyline" && p.range !== undefined && !(isRange(p.range) && (p.range as Range)[0] !== (p.range as Range)[1])) {
+    return `${type}.profile.range must be [t0, t1] with t0 ≠ t1`;
+  }
   const direction = asVec(g.direction);
   if (direction === null || Math.hypot(...direction) === 0) return `${type}.direction must be a non-zero vector`;
   if (g.window !== undefined && !validWindow(g.window)) return `${type}.window must be {u?: [a, b], v?: [a, b]}`;

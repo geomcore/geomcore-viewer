@@ -71,6 +71,17 @@ def test_a_result_reuses_operands_already_in_the_scene(server):
     assert not any(i.startswith("Y·first") or i.startswith("Y·second") for i in ids)
 
 
+def test_re_adding_a_result_under_its_label_keeps_its_operands(server):
+    """The label's own family is being replaced, so its operands must not count as already shown."""
+    view = make(server)
+    a = Line3D(Point3D(0, 0, 0), Point3D(1, 1, 0))
+    b = Line3D(Point3D(0, 1, 0), Point3D(1, -1, 0))
+    view.add(CurveCurveIntersection(a, b), label="X")
+    view.add(CurveCurveIntersection(a, b), label="X")
+    ids = _ids(server)
+    assert "X·first" in ids and "X·second" in ids
+
+
 @pytest.fixture
 def server(tmp_path):
     srv = Server(tmp_path, port=0).start()
@@ -604,3 +615,51 @@ def test_pcurve_needs_a_surface_in_the_scene(server):
     with pytest.raises(ValueError, match="'nope' is not a surface"):
         view.pcurve([(0, 0), (1, 1)], on="nope")
     assert _ids(server) == ["A"]
+
+
+def test_u_window_narrows_a_revolution_whose_profile_is_bounded(server):
+    """The revolution's bounded profile already sets a v window; u= must still apply."""
+    geomcore = pytest.importorskip("geomcore")
+    if not hasattr(geomcore, "Axis") or not hasattr(geomcore.surfaces, "RevolutionSurface"):
+        pytest.skip("needs geomcore >= 0.43")
+    from geomcore import Axis, Point, Vector
+    from geomcore.curves import Circle
+    from geomcore.surfaces import RevolutionSurface
+
+    view = make(server)
+    surface = RevolutionSurface(Circle(Point(3, 0, 0), Vector(0, 1, 0), 1.0), Axis(Point(0, 0, 0), Vector(0, 0, 1)))
+    view.add(surface, label="R", u=(0.0, math.pi))
+    assert view.objects["R"]["geom"]["window"] == {"u": [0.0, math.pi], "v": [0.0, 2 * math.pi]}
+
+
+def test_numpy_arrays_are_points_and_point_lists(server):
+    np = pytest.importorskip("numpy")
+    view = make(server)
+    view.polyline(np.array([[0, 0, 0], [1, 0, 0], [1, 1, 0]]), label="A")
+    assert view.objects["A"]["geom"]["points"] == [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [1.0, 1.0, 0.0]]
+    assert len(view.polyline(np.zeros((2, 3, 3)), label="B")) == 2  # a stack of polylines
+    assert len(view.arrow(np.zeros((4, 3)), (0, 0, 1), label="C")) == 4
+    view.arrow(np.array([1.0, 2.0, 3.0]), np.array([0.0, 0.0, 1.0]), label="D")  # one numpy point
+    assert view.objects["D"]["geom"]["at"] == [1.0, 2.0, 3.0]
+    texts = view.text([(0, 0), (1, 1)], np.array(["a", "b"]), label="T")
+    assert [view.objects[h.id]["geom"]["text"] for h in texts] == ["a", "b"]
+
+
+def test_points_reject_an_unknown_colormap_and_an_empty_cloud(server):
+    view = make(server)
+    with pytest.raises(ValueError, match="unknown colormap 'nope'"):
+        view.points([(0, 0, 0)], values=[1.0], colormap="nope")
+    with pytest.raises(ValueError, match="unknown colormap"):
+        view.mesh([(0, 0, 0), (1, 0, 0), (0, 1, 0)], [0, 1, 2], values=[0, 1, 2], colormap="jet")
+    with pytest.raises(ValueError, match="empty"):
+        view.points([])
+    assert view.points([(0, 0, 0)], values=[1.0], colormap="coolwarm", label="P") is not None
+    assert view.objects["P"]["geom"]["colormap"] == "coolwarm"
+
+
+def test_python_colormaps_match_the_page():
+    from geomcore_viewer.viewer import COLORMAPS
+
+    source = (Path(__file__).resolve().parents[2] / "frontend/src/ui/colormap.ts").read_text()
+    maps = re.search(r"const MAPS[^{]*\{(.*?)\n\};", source, re.S).group(1)
+    assert tuple(re.findall(r"^  ([a-z]+):", maps, re.M)) == COLORMAPS

@@ -65,6 +65,7 @@ describe("profile surfaces", () => {
     [{ type: "extrusion", profile: { type: "line", o: [0, 0], d: [1, 0] }, direction: [0, 0, 0] }, "extrusion.direction must be a non-zero vector"],
     [{ type: "extrusion", profile: { type: "line", o: [0, 0], d: [1, 0] }, direction: [0, 0, 1], window: { u: [1] } }, "extrusion.window must be {u?: [a, b], v?: [a, b]}"],
     [{ type: "revolution", profile: { type: "line", o: [0, 0], d: [1, 0] }, direction: [0, 0, 1] }, "revolution.origin must be a point"],
+    [{ type: "extrusion", profile: { type: "polyline", points: [[0, 0], [1, 0]], range: [1, 1] }, direction: [0, 0, 1] }, "extrusion.profile.range must be [t0, t1] with t0 ≠ t1"],
     [{ type: "revolution", profile: { type: "line", o: [0, 0], d: [1, 0] }, origin: [0, 0, 0], direction: [0, 0, 0] }, "revolution.direction must be a non-zero vector"],
   ])("rejects malformed %j", (geom, message) => {
     expect(parseObject({ id: "a", geom })).toEqual({ problem: { id: "a", message } });
