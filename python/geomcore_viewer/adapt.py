@@ -33,7 +33,8 @@ CURVES = frozenset({"Line3D", "Line2D", "Circle3D", "Circle2D", "Ellipse3D", "Pa
 SURFACES = frozenset({"Plane", "Cylinder", "Cone", "Sphere", "Torus"})
 POINTS = frozenset({"Point3D", "Point2D"})
 SAMPLED = frozenset({"BSplineCurve3D", "BSplineSurface"})
-GEOMETRY = CURVES | SURFACES | POINTS | SAMPLED
+TRIMMED_CURVES = frozenset({"TrimmedCurve3D", "TrimmedCurve2D"})
+GEOMETRY = CURVES | SURFACES | POINTS | SAMPLED | TRIMMED_CURVES
 SURFACE_TYPES = frozenset({"plane", "cylinder", "cone", "sphere", "torus"})
 
 # geomcore 0.39 renamed the 3D classes (the suffix moved to the 2D ones) and 0.43 removed the
@@ -285,18 +286,33 @@ def _single(obj, label: str | None, u, v) -> list[dict]:
 
 
 UV_CURVES = frozenset({"Line2D", "Circle2D"})
+# Every other 2D curve is sampled over its bounds into a polyline: the pane draws pcurves as a
+# (u, v) line, circle or polyline, and the sampled kinds have no protocol type of their own.
+SAMPLED_UV_CURVES = frozenset({
+    "Ellipse2D", "Parabola2D", "Hyperbola2D", "BezierCurve2D", "BSplineCurve2D", "TrimmedCurve2D",
+})
 
 
 def uv_curve(curve) -> dict:
-    """A pcurve's curve as protocol geometry in z = 0 (x is u, y is v): a geomcore ``Line2D`` or
-    ``Circle2D`` (what ``curve.parametrize_on(surface)`` returns), or a sequence of ``(u, v)``
-    pairs, which becomes a polyline."""
+    """A pcurve's curve as protocol geometry in z = 0 (x is u, y is v): any geomcore 2D curve —
+    a ``Line2D``/``Circle2D`` exactly (what ``surface.curve_3d_to_uv`` or
+    ``curve.parametrize_on`` returns), the others sampled over their bounds into a polyline —
+    or a sequence of ``(u, v)`` pairs, which also becomes a polyline."""
     name = _name(curve)
     if name in UV_CURVES:
         [part] = _single(curve, None, None, None)
         return part["geom"]
+    if name in SAMPLED_UV_CURVES:
+        t0, t1 = curve.bounds()
+        if not (math.isfinite(t0) and math.isfinite(t1)):
+            raise TypeError(
+                f"a pcurve cannot sample the unbounded {name}: pass a trimmed curve or (u, v) pairs")
+        return {"type": "polyline",
+                "points": [as_vec(p) for p in sample_curve(curve.eval_point, t0, t1, _BSPLINE_SEGMENTS)]}
     if name in GEOMETRY:
-        raise TypeError(f"a pcurve takes a Line2D, a Circle2D or (u, v) pairs, not a {name}")
+        raise TypeError(f"a pcurve takes a 2D curve or (u, v) pairs, not a {name}")
+    if not isinstance(curve, Iterable):
+        raise TypeError(f"a pcurve takes a 2D curve or (u, v) pairs, not a {name}")
     points = [as_vec(p) for p in curve]
     if any(p[2] != 0.0 for p in points):
         raise TypeError("a pcurve's points are (u, v) pairs")
@@ -457,7 +473,6 @@ def _projection(result, label: str | None, u=None, v=None) -> list[dict]:
 INTERSECTIONS = frozenset({
     "CurveCurveIntersection", "CurveCurveIntersection2D", "CurveSurfaceIntersection", "SurfaceSurfaceIntersection",
 })
-TRIMMED_CURVES = frozenset({"TrimmedCurve3D", "TrimmedCurve2D"})
 OPERAND_OPACITY = 0.45
 _RANGE_SEGMENTS = 64
 # Twelve box segments as one polyline over the corner indices (bit 0 is x, bit 1 is y, bit 2 is z);
