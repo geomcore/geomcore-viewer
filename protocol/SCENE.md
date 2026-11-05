@@ -13,6 +13,7 @@ The viewer never computes intersections or any other geometric query.
   "title": "Ellipse ∩ circle",
   "run": "a1b2c3d4e5f6",
   "view": "auto",
+  "steps": ["tilt 0°", "tilt 45°"],
   "objects": [
     {
       "id": "E", "label": "E", "group": "conics", "source": "Ellipse3D",
@@ -35,13 +36,16 @@ The viewer never computes intersections or any other geometric query.
 | `label` | no | display name (panel, point labels) |
 | `group` | no | panel grouping / visibility toggle |
 | `source` | no | client-side type name, e.g. `Ellipse3D` |
+| `step` | no | lesson step the object belongs to; the page shows one step at a time, objects without a step show in every step |
 | `style` | no | `color` (CSS), `width` (px), `dashed`, `opacity` (0–1; surfaces and meshes default to 0.45 when the scene holds a curve, polyline or pcurve, else 1) |
 | `extras` | no | curves: `foci`, `center`, `axes`, `asymptotes`, `directrix`, `vertex`; B-spline/Bézier curves: `poles` (array of points → control polygon and dots), `knots` (array of points → dots), `comb` (`{scale, teeth: [[base, tip], …]}` → teeth and their envelope); surfaces: `isolines: [nu, nv]` (or `true` for 12 × 6; drawn at the middle of each cell of the window), `wire` (lines only: the isolines, 24 × 12 by default, and the window's edges), `normals` (array of `[base, tip]` segments). The Python client computes the point/segment arrays from the exact geomcore object (`poles=True`, `knots=True`, `comb=scale`, `normals=n`); the page draws them as extras. Unknown extras are ignored. |
 | `meta` | no | free-form client data. The Python client sets `tag` (the intersection result's tag, e.g. `"points"`) and `params` (the numbers of the hit, e.g. `[t, s]` for `(t, P, s)`; a non-finite one is `null`); the 2D tooltip shows `params`. `operand: true` marks a result's operand or projection target: the views draw no label for it (hovering still names it). |
 
-`view` is `"auto"`, `"2d"` or `"3d"`. Vectors are `[x, y, z]`; a
-2-component vector is read as `[x, y, 0]`. Every `frame` carries all three
-unit axes `o, x, y, z` (right-handed, orthonormal).
+`view` is `"auto"`, `"2d"` or `"3d"`. `steps` is the ordered list of
+lesson steps (the page's slider and ←/→ browse it); a new run with
+`keep: false` clears it. Vectors are `[x, y, z]`; a 2-component vector is
+read as `[x, y, 0]`. Every `frame` carries all three unit axes `o, x, y, z`
+(right-handed, orthonormal).
 
 ## Geometry types
 

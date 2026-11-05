@@ -18,6 +18,8 @@ export interface SceneObject {
   label?: string;
   group?: string;
   source?: string;
+  /** The lesson step it belongs to; objects without one show in every step. */
+  step?: string;
   style?: Style;
   extras?: Record<string, unknown>;
   meta?: Record<string, unknown>;
@@ -30,6 +32,8 @@ export interface SceneDoc {
   title: string;
   run: string | null;
   view: ViewMode;
+  /** Step names in order, when the scene is a lesson with parameters. */
+  steps?: string[];
   objects: SceneObject[];
 }
 
@@ -41,7 +45,7 @@ export interface Problem {
 export type ServerEvent =
   | { type: "scene"; doc: unknown }
   | { type: "run"; run: string; keep: boolean }
-  | { type: "upsert"; objects: unknown[]; title?: string; view?: string }
+  | { type: "upsert"; objects: unknown[]; title?: string; view?: string; steps?: unknown }
   | { type: "remove"; id: string }
   | { type: "clear" };
 
@@ -226,6 +230,8 @@ export function parseObject(raw: unknown): { object: SceneObject } | { problem: 
   if (extras) object.extras = extras;
   const meta = record(r.meta);
   if (meta) object.meta = meta;
+  const step = str(r.step);
+  if (step !== undefined) object.step = step;
   return { object };
 }
 
@@ -264,5 +270,8 @@ export function parseDoc(raw: unknown): { doc: SceneDoc; problems: Problem[] } {
     else problems.push(parsed.problem);
   }
   const view = typeof r.view === "string" && VIEWS.has(r.view) ? (r.view as ViewMode) : "auto";
-  return { doc: { version: 2, title: str(r.title) ?? "", run: str(r.run) ?? null, view, objects }, problems };
+  const steps = Array.isArray(r.steps)
+    ? [...new Set(r.steps.filter((f): f is string => typeof f === "string" && f !== ""))]
+    : [];
+  return { doc: { version: 2, title: str(r.title) ?? "", run: str(r.run) ?? null, view, steps, objects }, problems };
 }

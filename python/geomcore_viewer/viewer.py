@@ -90,7 +90,10 @@ class Viewer:
         self.open_browser, self.spawn = open_browser, spawn
         self.run = uuid.uuid4().hex[:12]
         self.objects: dict[str, dict] = {}
-        self._families: dict[str, list[str]] = {}  # label → ids its last add produced
+        self.steps: list[str] = []  # step names in the order they were opened
+        self._step: str | None = None  # the step being filled, inside `with view.step(...)`
+        self._steps_unsent = False  # the step list changed since the server last heard it
+        self._families: dict[tuple, list[str]] = {}  # (step, label) → ids its last add produced
         self._unsent: list[str] = []
         self._pending_removals: list[str] = []  # deletes the server has not acknowledged yet
         self._pending_clear = False
@@ -125,9 +128,11 @@ class Viewer:
         parts: list[dict] = []
         for i, obj in enumerate(objs, start=1):
             part_label = label if len(objs) == 1 or label is None else indexed(label, i)
-            # Re-adding a label replaces its family, so that family's operands do not count as shown.
-            replaced = set(self._families.get(label, ())) if label is not None else set()
-            existing = [o["geom"] for o in self.objects.values() if o["id"] not in replaced] + [p["geom"] for p in parts]
+            # What the scene already shows here: objects outside any step and in this step, less the
+            # family this label is replacing.
+            replaced = set(self._families.get((self._step, label), ())) if label is not None else set()
+            existing = [o["geom"] for o in self.objects.values()
+                        if o["id"] not in replaced and o.get("step") in (None, self._step)] + [p["geom"] for p in parts]
             object_parts = to_objects(obj, part_label, u=u, v=v, existing=existing, operands=operands)
             if len(object_parts) == 1:
                 # Poles, knots, combs and normals come from the exact object, once its window is known.
@@ -142,6 +147,8 @@ class Viewer:
         page draws the curve on the surface in 3D and in the (u,v) pane.
         """
         surface = on.id if isinstance(on, Handle) else on
+        if self._step is not None and f"{self._step}·{surface}" in self.objects:
+            surface = f"{self._step}·{surface}"  # a label given inside a step names that step's object
         if self.objects.get(surface, {}).get("geom", {}).get("type") not in SURFACE_TYPES:
             raise ValueError(f"pcurve: {surface!r} is not a surface in this scene (add the surface first)")
         geom = {"type": "pcurve", "surface": surface, "curve": uv_curve(curve)}
@@ -197,6 +204,25 @@ class Viewer:
         return self._commit(_labelled_geoms(geoms, label), label, group, options)
 
     @contextmanager
+    def step(self, name: str):
+        """A lesson step: objects added inside belong to ``name``. The page shows one step at a
+        time (a slider and ←/→), so a parameter can be re-drawn per value instead of piling the
+        states on top of each other. Objects added outside any step stay in every step. Re-entering
+        a step's name adds to that step; steps do not nest."""
+        if self._step is not None:
+            raise ValueError(f"step({name!r}) inside step({self._step!r}): steps do not nest")
+        name = str(name)
+        if name not in self.steps:
+            self.steps.append(name)
+            self._steps_unsent = True
+        self._step = name
+        try:
+            yield self
+        finally:
+            self._step = None
+            self._flush()  # the step list may be new, even when nothing else changed
+
+    @contextmanager
     def batch(self):
         """Send everything added inside the block in one request, instead of one per call:
         ``with view.batch(): view.arrow(...) ...``. Batches nest (the outermost one sends). If the
@@ -222,10 +248,11 @@ class Viewer:
             self._unsent.append(obj["id"])
         ids = list(dict.fromkeys(obj["id"] for obj in objects))
         if label is not None:
-            for stale in self._families.get(label, []):
+            family = (self._step, label)
+            for stale in self._families.get(family, []):
                 if stale not in ids:
                     self._remove(stale)
-            self._families[label] = ids
+            self._families[family] = ids
         self._flush()
         handles = [Handle(self, i) for i in ids]
         return handles[0] if len(handles) == 1 else handles
@@ -233,6 +260,8 @@ class Viewer:
     def _build(self, part: dict, style: dict, group, extras: dict, u, v) -> dict:
         geom = part["geom"]
         object_id = part.get("key") or part["label"] or self._auto_id()
+        if self._step is not None:
+            object_id = f"{self._step}·{object_id}"  # labels may repeat across steps; ids must not
         # u= / v= narrow a surface even when its adapter already windowed it (a revolution's
         # bounded profile, say).
         if geom["type"] in SURFACE_TYPES and (missing_window(geom) or u is not None or v is not None):
@@ -260,6 +289,8 @@ class Viewer:
             obj["extras"] = {**extras, **computed}
         if part.get("meta"):
             obj["meta"] = part["meta"]
+        if self._step is not None:
+            obj["step"] = self._step
         _check_serializable(obj)
         return obj
 
@@ -296,6 +327,9 @@ class Viewer:
     def clear(self) -> None:
         """Empty the scene, here and in the open tab."""
         self.objects.clear()
+        # Inside a step, what follows still belongs to that step.
+        self.steps[:] = [self._step] if self._step is not None else []
+        self._steps_unsent = self._step is not None
         self._families.clear()
         self._unsent.clear()
         self._pending_removals.clear()
@@ -305,7 +339,7 @@ class Viewer:
     # -- persistence -----------------------------------------------------------
     def scene(self) -> dict:
         return {"version": PROTOCOL, "title": self.title, "run": self.run, "view": self.view,
-                "objects": list(self.objects.values())}
+                "steps": list(self.steps), "objects": list(self.objects.values())}
 
     def save(self, path: str | Path) -> Path:
         """Write the scene as JSON (open it with ``?scene=`` or drag-drop it on the page)."""
@@ -323,7 +357,8 @@ class Viewer:
         ``batch()`` block nothing is sent until the outermost block exits."""
         if self._batch_depth:
             return
-        if not (self._unsent or self._pending_removals or self._pending_clear) or not self._connect():
+        if not (self._unsent or self._steps_unsent or self._pending_removals or self._pending_clear) \
+                or not self._connect():
             return
         if self._pending_clear:
             self._pending_clear = False
@@ -335,11 +370,11 @@ class Viewer:
             if not self._request("DELETE", f"/api/objects/{quote(object_id, safe='')}", missing_ok=True):
                 self._pending_removals.insert(0, object_id)
                 return
-        if not self._unsent:
+        if not (self._unsent or self._steps_unsent):
             return
         ids = list(dict.fromkeys(self._unsent))
         batch: dict = {"objects": [self.objects[i] for i in ids if i in self.objects],
-                       "title": self.title, "view": self.view}
+                       "title": self.title, "view": self.view, "steps": list(self.steps)}
         if self._resync or not self._run_sent:
             batch.update(run=self.run, keep=self.keep)
         try:
@@ -351,6 +386,7 @@ class Viewer:
         if sent:
             self._run_sent, self._resync = True, False
             self._unsent.clear()
+            self._steps_unsent = False
 
     def _connect(self) -> bool:
         if self._online:

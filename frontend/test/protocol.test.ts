@@ -98,6 +98,26 @@ describe("scalar colouring", () => {
   });
 });
 
+describe("steps", () => {
+  it("keeps a step on the object and the ordered list on the document", () => {
+    const doc = parseDoc({
+      version: 2, title: "T", view: "3d", steps: ["a", "b", "a"],
+      objects: [{ id: "o", step: "a", geom: { type: "point", p: [0, 0, 0] } }],
+    });
+    expect(doc.doc.steps).toEqual(["a", "b"]);
+    expect(doc.doc.objects[0].step).toBe("a");
+  });
+
+  it("ignores malformed step data", () => {
+    const doc = parseDoc({
+      version: 2, title: "", steps: ["a", 7, ""],
+      objects: [{ id: "o", step: 5, geom: { type: "point", p: [0, 0, 0] } }],
+    });
+    expect(doc.doc.steps).toEqual(["a"]);
+    expect(doc.doc.objects[0].step).toBeUndefined();
+  });
+});
+
 describe("pcurve", () => {
   it("accepts a (u, v) line, circle or polyline and pads 2D vectors", () => {
     const line = parseObject({ id: "c", geom: { type: "pcurve", surface: "Y", curve: { type: "line", o: [0, 3], d: [1, 0], range: [0, 6] } } });
@@ -135,7 +155,7 @@ describe("parseDoc", () => {
 
   it("reads v2 metadata and rejects other versions", () => {
     const { doc } = parseDoc({ version: 2, title: "t", run: "r", view: "2d", objects: [] });
-    expect(doc).toEqual({ version: 2, title: "t", run: "r", view: "2d", objects: [] });
+    expect(doc).toEqual({ version: 2, title: "t", run: "r", view: "2d", steps: [], objects: [] });
     expect(() => parseDoc({ version: 3, objects: [] })).toThrow(VersionError);
   });
 });

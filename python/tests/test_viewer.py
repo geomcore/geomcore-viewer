@@ -197,6 +197,95 @@ def test_nan_geometry_is_rejected(server):
     assert view.objects == {} and _ids(server) == []
 
 
+def test_steps_hold_their_own_objects(server):
+    view = make(server)
+    view.add(Point3D(0, 0), label="fixed")
+    for name in ("tilt 0°", "tilt 45°"):
+        with view.step(name):
+            view.add(Point3D(1, 0), label="cone")
+            view.add(Point3D(2, 0), label="plane")
+    scene = _scene(server)
+    assert scene["steps"] == ["tilt 0°", "tilt 45°"]
+    objects = scene["objects"]
+    assert [o["id"] for o in objects if "step" not in o] == ["fixed"]
+    assert {o["step"] for o in objects if "step" in o} == {"tilt 0°", "tilt 45°"}
+    cones = [o for o in objects if o["label"] == "cone"]
+    assert len(cones) == 2 and len({o["id"] for o in cones}) == 2
+    assert all(o["id"].startswith(o["step"] + "·") for o in cones)
+
+
+def test_re_running_a_step_replaces_only_that_step(server):
+    view = make(server)
+    with view.step("a"):
+        view.add(Point3D(0, 0), label="P")
+    with view.step("b"):
+        view.add(Point3D(1, 0), label="P")
+    with view.step("a"):
+        view.add(Point3D(2, 0), label="P")
+    ps = [o for o in _scene(server)["objects"] if o["label"] == "P"]
+    assert sorted((o["step"], o["geom"]["p"][0]) for o in ps) == [("a", 2.0), ("b", 1.0)]
+
+
+def test_clear_forgets_the_steps(server):
+    view = make(server)
+    with view.step("a"):
+        view.add(Point3D(0, 0), label="P")
+    view.clear()
+    assert view.steps == [] and _scene(server)["steps"] == []
+
+
+def test_an_empty_step_still_reaches_the_page(server):
+    view = make(server)
+    with view.step("empty"):
+        pass
+    assert _scene(server)["steps"] == ["empty"]
+
+
+def test_steps_do_not_nest(server):
+    view = make(server)
+    with view.step("outer"):
+        with pytest.raises(ValueError, match="do not nest"):
+            with view.step("inner"):
+                pass
+    assert view.steps == ["outer"]
+
+
+def test_clear_inside_a_step_keeps_filling_that_step(server):
+    view = make(server)
+    with view.step("a"):
+        view.clear()
+        view.add(Point3D(0, 0), label="P")
+    assert view.steps == ["a"] and view.objects["a·P"]["step"] == "a"
+    assert _scene(server)["steps"] == ["a"]
+
+
+def test_pcurve_on_a_label_inside_a_step_finds_that_steps_surface(server):
+    view = make(server)
+    with view.step("s"):
+        view.add(Plane(), label="pl", u=(0, 4), v=(0, 2))
+        view.pcurve([(0, 0), (4, 2)], on="pl", label="diag")
+    assert view.objects["s·diag"]["geom"]["surface"] == "s·pl"
+
+
+def test_a_result_redraws_an_operand_shown_only_in_another_step(server):
+    view = make(server)
+    a = Line3D(Point3D(0, 0, 0), Point3D(1, 1, 0))
+    b = Line3D(Point3D(0, 1, 0), Point3D(1, -1, 0))
+    with view.step("one"):
+        view.add(a, label="A")
+    with view.step("two"):
+        view.add(CurveCurveIntersection(a, b), label="X")
+    assert "two·X·first" in _ids(server)  # A is not on screen in step "two"
+
+
+def test_steps_are_on_the_saved_scene(tmp_path):
+    view = gv.Viewer(spawn=False, open_browser=False)
+    with view.step("one"):
+        view.add(Point3D(0, 0), label="P")
+    saved = json.loads(view.save(tmp_path / "s.json").read_text())
+    assert saved["steps"] == ["one"] and saved["objects"][0]["step"] == "one"
+
+
 def test_points_builds_one_cloud_object(server):
     view = make(server)
     view.points([(0, 0, 0), (1, 0, 0), (0, 1, 0)], values=[0, 0.5, 1], colormap="plasma", size=4, label="dev")

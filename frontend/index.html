@@ -15,6 +15,12 @@
       <div class="seg" role="group" aria-label="view">
         <button id="view-2d" title="Plane view (2)">2D</button><button id="view-3d" title="3D view (3)">3D</button>
       </div>
+      <div class="seg" id="step-bar" role="group" aria-label="step" hidden>
+        <button id="step-previous" title="Previous step (←)">‹</button>
+        <input type="range" id="step-slider" min="0" max="0" step="1" aria-label="step" />
+        <span id="step-label" class="meta"></span>
+        <button id="step-next" title="Next step (→)">›</button>
+      </div>
       <label class="check" title="Frame the scene as it changes"><input type="checkbox" id="autofit" checked /> auto-fit</label>
       <label class="check" title="Show object labels (axis ticks stay)"><input type="checkbox" id="labels" checked /> labels</label>
       <button id="fit" title="Fit the scene (F)">fit</button>

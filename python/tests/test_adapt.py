@@ -394,6 +394,7 @@ def _bare_viewer():
 
     viewer = Viewer.__new__(Viewer)
     viewer._next_color, viewer._next_auto, viewer.run, viewer.objects = 0, 0, "abcdef", {}
+    viewer._step = None
     return viewer
 
 
@@ -1185,6 +1186,7 @@ def test_user_style_wins_over_recipe_defaults():
 
     viewer = Viewer.__new__(Viewer)
     viewer._next_color, viewer._next_auto, viewer.run, viewer.objects = 0, 0, "abcdef", {}
+    viewer._step = None
     result = CurveCurveIntersection(x_line(), unit_circle(), hits=[CurveCurveHit(Point3D(1, 0, 0), 0.0, 0.0)])
     built = [viewer._build(p, {"opacity": 0.2, "color": "#000000"}, None, {}, None, None)
              for p in to_objects(result, "U") if p["geom"]["type"] != "note"]
@@ -1197,6 +1199,7 @@ def test_user_opacity_applies_to_the_operands_only():
 
     viewer = Viewer.__new__(Viewer)
     viewer._next_color, viewer._next_auto, viewer.run, viewer.objects = 0, 0, "abcdef", {}
+    viewer._step = None
     result = CurveCurveIntersection(x_line(), unit_circle(), overlaps=[CurveCurveOverlap((1.0, 3.0), (0.0, 1.0))],
                                     hits=[CurveCurveHit(Point3D(1, 0, 0), 0.0, 0.0)])
     built = {p["key"]: viewer._build(p, {"opacity": 0.2}, None, {}, None, None)
@@ -1319,6 +1322,7 @@ def test_live_plane_sphere_window_is_local_whatever_the_scene_holds():
     result = Plane(P(500, 500, 0), world_z(V)).intersect(Sphere(P(510, 500, 1), 3.0))
     viewer = Viewer.__new__(Viewer)
     viewer._next_color, viewer._next_auto, viewer.run, viewer.objects = 0, 0, "abcdef", {}
+    viewer._step = None
     viewer.objects["far"] = {"id": "far", "geom": {"type": "point", "p": [9000.0, 0.0, 0.0]}}
     window = by_key(to_objects(result, "S"))["S·first"]["geom"]["window"]
     built = viewer._build(by_key(to_objects(result, "S"))["S·first"], {}, None, {}, None, None)

@@ -58,6 +58,7 @@ function detailOf(o: SceneObject, objects: Map<string, SceneObject>): { detail: 
 export function panelModel(store: Store, ui: UiState): PanelModel {
   const groups = new Map<string | null, GroupModel>([[null, { name: null, visible: true, collapsed: false, rows: [] }]]);
   for (const o of store.objects.values()) {
+    if (!ui.inStep(o)) continue;
     const name = o.group ?? null;
     let group = groups.get(name);
     if (!group) {
@@ -160,7 +161,7 @@ export function mountPanel(store: Store, ui: UiState, list: HTMLElement): void {
     if (ev.type !== "meta") frame.request();
   });
   ui.onChange((ev) => {
-    if (ev === "visibility" || ev === "selection" || ev === "collapse") frame.request();
+    if (ev === "visibility" || ev === "selection" || ev === "collapse" || ev === "step") frame.request();
   });
   render();
 }

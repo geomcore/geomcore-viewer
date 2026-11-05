@@ -251,7 +251,7 @@ export class View3D {
       this.rebuild(); // extras and the grid take their colours from the palette
     } else if (ev === "labels") {
       this.labelsDirty = true;
-    } else if (ev === "visibility") {
+    } else if (ev === "visibility" || ev === "step") {
       for (const [id, b] of this.built) {
         const o = this.store.objects.get(id);
         const visible = o ? this.ui.isVisible(o) : false;
