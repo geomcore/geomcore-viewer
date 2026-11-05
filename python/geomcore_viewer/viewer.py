@@ -163,7 +163,9 @@ class Viewer:
     def _build(self, part: dict, style: dict, group, extras: dict, u, v) -> dict:
         geom = part["geom"]
         object_id = part.get("key") or part["label"] or self._auto_id()
-        if geom["type"] in SURFACE_TYPES and missing_window(geom):
+        # u= / v= narrow a surface even when its adapter already windowed it (a revolution's
+        # bounded profile, say).
+        if geom["type"] in SURFACE_TYPES and (missing_window(geom) or u is not None or v is not None):
             others = (o["geom"] for o in self.objects.values() if o["id"] != object_id)
             geom = with_window(geom, scene_extent(others), u, v)
         obj: dict = {"id": object_id, "geom": geom}

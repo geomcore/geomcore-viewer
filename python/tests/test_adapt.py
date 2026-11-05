@@ -633,6 +633,49 @@ def test_real_geomcore_extrusion_and_revolution_follow_the_kernel():
             assert eval_surface(geom, u, v) == pytest.approx(as_vec(obj.eval_point(u, v)))
 
 
+def test_real_geomcore_sampled_profiles_keep_the_kernel_parameter():
+    """A B-spline or Bézier profile is sampled into a polyline that carries its parameter range,
+    so the swept surface stays on geomcore's (u, v) up to the sampling chord."""
+    gc = real_geomcore()
+    if not hasattr(gc, "ExtrusionSurface"):  # geomcore >= 0.43
+        pytest.skip("needs geomcore >= 0.43")
+    P = gc.Point3D
+    bspline = gc.BSplineCurve3D.interpolate([P(1, 0, 0), P(2, 0, 1), P(1.5, 0, 2), P(3, 0, 3)], 3)
+    bezier = gc.BezierCurve.from_bspline(gc.BSplineCurve3D.interpolate([P(1, 0, 0), P(2, 0, 1), P(1, 0, 2)], 2))
+    axis = gc.Axis(P(0, 0, 0), gc.Vector3D(0, 0, 1))
+    for profile in (bspline, bezier):
+        for obj, window in ((gc.ExtrusionSurface(profile, gc.Vector3D(0, 1, 0.2)), {"u": [0.0, 1.0]}),
+                            (gc.RevolutionSurface(profile, axis), {"v": [0.0, 1.0]})):
+            [part] = to_objects(obj)
+            geom = part["geom"]
+            assert geom["profile"]["range"] == [0.0, 1.0] and geom["window"] == window
+            for u, v in ((0.2, 0.3), (0.7, 0.9)):
+                assert math.dist(eval_surface(geom, u, v), as_vec(obj.eval_point(u, v))) < 1e-3
+
+
+def test_unbounded_profiles_are_windowed_within_the_extent():
+    """±extent of hyperbola parameter would reach e^extent: the window keeps the profile near the scene."""
+    world = {"o": [0.0, 0.0, 0.0], "x": [1.0, 0.0, 0.0], "y": [0.0, 1.0, 0.0], "z": [0.0, 0.0, 1.0]}
+    for profile in ({"type": "hyperbola", "frame": world, "a": 2.0, "b": 1.0},
+                    {"type": "parabola", "frame": world, "f": 0.25}):
+        geom = with_window({"type": "extrusion", "profile": profile, "direction": [0.0, 0.0, 2.0]}, 10.0)
+        (u0, u1), (v0, v1) = geom["window"]["u"], geom["window"]["v"]
+        assert (v0, v1) == (-5.0, 5.0)  # the sweep's parameter scales by the direction's length
+        for u in (u0, u1):
+            assert 5.0 < math.hypot(*eval_curve(profile, u)) < 2.5 * 10.0
+
+
+def test_real_geomcore_projection_onto_a_revolution_keeps_the_full_turn():
+    gc = real_geomcore()
+    if not hasattr(gc, "RevolutionSurface"):  # geomcore >= 0.43
+        pytest.skip("needs geomcore >= 0.43")
+    profile = gc.Circle3D(gc.Point3D(3, 0, 0), gc.Vector3D(0, 1, 0), 1.0)
+    torus_like = gc.RevolutionSurface(profile, gc.Axis(gc.Point3D(0, 0, 0), gc.Vector3D(0, 0, 1)))
+    parts = to_objects(torus_like.project_point(gc.Point3D(5, 1, 0.5)))
+    [target] = [p for p in parts if p["geom"]["type"] == "revolution"]
+    assert target["geom"]["window"]["u"] == [0.0, TAU]
+
+
 # --- projection results (geomcore >= 0.36) ---------------------------------
 class CurveProjection:
     def __init__(self, target, query_point, point, distance, parameter):
