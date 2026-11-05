@@ -663,7 +663,7 @@ def _projection(result, label: str | None, u=None, v=None, existing=(), operands
     closest_meta = {"tag": "projection", "params": _numeric(params)}
     accent = {"color": ACCENT}
     neutral = {"color": QUERY_POINT_COLOR}
-    target_part = {**target, "key": f"{label}·target", "group": label}
+    target_part = {**target, "key": f"{label}·target", "group": label, "meta": {"operand": True}}
     parts = [] if operands is False or _same_value(target["geom"], existing) else [target_part]
     return parts + [
         {"label": "query point", "key": f"{label}·query", "group": label, "style": neutral,
@@ -759,7 +759,8 @@ def _operands(result, label: str, reference_points: list, u, v, existing=(), sho
     parts = []
     for name, obj in zip(("first", "second"), operands):
         [part] = _single(obj, None, u, v)
-        parts.append({**part, "key": f"{label}·{name}", "group": label, "style": {"opacity": OPERAND_OPACITY}})
+        parts.append({**part, "key": f"{label}·{name}", "group": label, "style": {"opacity": OPERAND_OPACITY},
+                      "meta": {"operand": True}})
     points = list(reference_points)
     for part in parts:
         if not _INFINITE.get(part["geom"]["type"]):

@@ -147,7 +147,12 @@ In the plane view, hover an object for its type, label, parameter `t`, and
 `(x, y)`; intersection points also show the parameters of the hit
 (`meta.params`). Click a point to copy its coordinates. Drag to pan and
 scroll to zoom. The panel's checkboxes hide objects and whole groups, and
-stay off when the script runs again. Click a row to frame that object.
+stay off when the script runs again. Click a row to frame that object. The
+header's `labels` checkbox hides object labels in both views; hover still
+names them, and axis ticks stay.
+
+In 3D, result operands draw no labels of their own (they stay named on hover),
+so a figure made of several results stays readable.
 
 In 3D, drag to orbit, right-drag to pan and scroll to zoom; the toolbar
 switches between perspective and orthographic and snaps to the top, front,

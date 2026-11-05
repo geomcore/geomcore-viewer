@@ -11,7 +11,7 @@ export function usableView(view: ActiveView, available: AvailableViews): ActiveV
   return !available[view] && available[other] ? other : view;
 }
 
-export type UiEvent = "theme" | "presenting" | "view" | "visibility" | "selection" | "autofit" | "collapse" | "uvpane";
+export type UiEvent = "theme" | "presenting" | "view" | "visibility" | "selection" | "autofit" | "collapse" | "uvpane" | "labels";
 
 /** The part of `Storage` the UI needs (tests pass a Map-backed fake). */
 export interface KeyValueStore {
@@ -52,6 +52,8 @@ export class UiState {
   autoFit = true;
   /** Spec §5.4: the (u,v) pane shows when the scene has something for it; U hides it (and brings it back). */
   uvPane = true;
+  /** Object labels in both views; the header's "labels" toggle turns them off (axis ticks stay). */
+  showLabels = true;
   viewOverride: ActiveView | null = null;
   selected: string | null = null;
   readonly hiddenIds = new Set<string>();
@@ -107,6 +109,12 @@ export class UiState {
   toggleUvPane(): void {
     this.uvPane = !this.uvPane;
     this.emit("uvpane");
+  }
+
+  setShowLabels(on: boolean): void {
+    if (on === this.showLabels) return;
+    this.showLabels = on;
+    this.emit("labels");
   }
 
   setView(view: ActiveView): void {

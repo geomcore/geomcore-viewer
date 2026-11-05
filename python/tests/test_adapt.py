@@ -1041,6 +1041,16 @@ def test_default_group_names_both_operands_and_is_deterministic():
     assert {p["key"] for p in to_objects(result)} == {p["key"] for p in to_objects(result)}
 
 
+def test_operand_parts_are_marked_so_the_views_drop_their_labels():
+    result = CurveCurveIntersection(x_line(), unit_circle())
+    parts = to_objects(result, "P")
+    operands = [p for p in parts if p["key"] in ("P·first", "P·second")]
+    assert len(operands) == 2 and all(p["meta"] == {"operand": True} for p in operands)
+    projection = to_objects(CurveProjection(unit_circle(), Point3D(2, 0, 0), Point3D(1, 0, 0), 1.0, 0.0), "Pr")
+    [target] = [p for p in projection if p["key"] == "Pr·target"]
+    assert target["meta"] == {"operand": True}
+
+
 def test_operands_false_leaves_the_operands_out():
     result = CurveCurveIntersection(x_line(), unit_circle(), hits=[CurveCurveHit(Point3D(1, 0, 0), 0.0, 0.0)])
     keys = {p["key"] for p in to_objects(result, "P", operands=False)}

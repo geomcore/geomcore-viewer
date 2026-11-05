@@ -104,6 +104,8 @@ export interface Context3D {
 }
 
 const labelOf = (o: SceneObject): string => o.label ?? o.id;
+/** Result operands keep their label for hover but do not draw one in the view. */
+const labelsOn = (o: SceneObject): boolean => o.meta?.operand !== true;
 
 /** True when surfaces default to see-through: some curve, polyline or pcurve is in the scene. */
 export function hasCurves(objects: Iterable<SceneObject>): boolean {
@@ -158,7 +160,7 @@ export function objectDraw3D(o: SceneObject, ctx: Context3D): ObjectDraw3D {
     stroke(paths);
     out.pick.polylines.push(...pieces.map((s) => ({ pts: s.pts, ts: s.ts })));
     const at = curveAnchor(paths);
-    if (at) out.texts.push({ key: `c:${o.id}`, id: o.id, text: labelOf(o), at, color: null, kind: "curve" });
+    if (at && labelsOn(o)) out.texts.push({ key: `c:${o.id}`, id: o.id, text: labelOf(o), at, color: null, kind: "curve" });
   };
 
   if (isCurve(g)) {
@@ -186,7 +188,7 @@ export function objectDraw3D(o: SceneObject, ctx: Context3D): ObjectDraw3D {
       out.surface = null; // a wireframe is its lines only
     }
     const mid = evalSurface(g, (grid.u[0] + grid.u[1]) / 2, (grid.v[0] + grid.v[1]) / 2);
-    out.texts.push({ key: `s:${o.id}`, id: o.id, text: labelOf(o), at: mid, color: null, kind: "curve" });
+    if (labelsOn(o)) out.texts.push({ key: `s:${o.id}`, id: o.id, text: labelOf(o), at: mid, color: null, kind: "curve" });
   } else if (g.type === "mesh") {
     const mesh = { positions: g.vertices.flat(), indices: g.indices, uvs: [] };
     out.surface = { id: o.id, mesh, grid: null, color, alpha: surfaceAlpha(o, ctx.withCurves) };
@@ -197,11 +199,11 @@ export function objectDraw3D(o: SceneObject, ctx: Context3D): ObjectDraw3D {
   } else if (g.type === "point") {
     out.markers.push({ id: o.id, at: [g.p], color, px: POINT_PX, alpha, extra: false });
     out.pick.dots.push(g.p);
-    out.texts.push({ key: `p:${o.id}`, id: o.id, text: `${labelOf(o)} ${fmtPoint(g.p)}`, at: g.p, color: null, kind: "point" });
+    if (labelsOn(o)) out.texts.push({ key: `p:${o.id}`, id: o.id, text: `${labelOf(o)} ${fmtPoint(g.p)}`, at: g.p, color: null, kind: "point" });
   } else if (g.type === "points") {
     out.markers.push({ id: o.id, at: g.positions, color, px: g.size ?? 3, alpha, extra: false });
     out.pick.dots.push(...g.positions);
-    if (g.positions.length) out.texts.push({ key: `p:${o.id}`, id: o.id, text: labelOf(o), at: g.positions[0], color: null, kind: "point" });
+    if (g.positions.length && labelsOn(o)) out.texts.push({ key: `p:${o.id}`, id: o.id, text: labelOf(o), at: g.positions[0], color: null, kind: "point" });
   } else if (g.type === "text") {
     out.texts.push({ key: `t:${o.id}`, id: o.id, text: g.text, at: g.at, color: o.style?.color ? color : null, kind: "text" });
   }
