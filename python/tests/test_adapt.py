@@ -13,6 +13,7 @@ from geomcore_viewer.adapt import (
     as_vec,
     eval_curve,
     eval_surface,
+    extra_data,
     indexed,
     missing_window,
     scene_extent,
@@ -317,6 +318,112 @@ def test_profile_surface_windows_keep_the_profile_and_fill_the_sweep():
     [revolution] = to_objects(profile_surface_fake("RevolutionSurface", line))
     filled = with_window(revolution["geom"], 4.0)
     assert filled["window"] == {"u": [0.0, TAU], "v": [-4.0, 4.0]}
+
+
+def extras_curve_fake():
+    """A sampled curve whose exact data (poles, knots, derivatives, curvature) is known."""
+    geom = {"type": "line", "o": [0.0, 0.0, 0.0], "d": [1.0, 0.0, 0.0]}
+
+    class BSplineCurve:
+        def eval_point(self, t):
+            return Point3D(*eval_curve(geom, t))
+
+        def bounds(self):
+            return (0.0, 1.0)
+
+        def poles(self):
+            return [Point3D(0.0, 1.0, 0.0), Point3D(0.5, 2.0, 0.0), Point3D(1.0, 1.0, 0.0)]
+
+        def knots(self):
+            return [0.0, 0.5, 1.0]
+
+        def eval_d1(self, t):
+            return self.eval_point(t), Vector3D(1.0, 0.0, 0.0)
+
+        def eval_d2(self, t):
+            return self.eval_point(t), Vector3D(1.0, 0.0, 0.0), Vector3D(0.0, 1.0, 0.0)
+
+        def curvature(self, t):
+            return 2.0
+
+    return BSplineCurve()
+
+
+def test_teaching_extras_come_from_the_exact_object():
+    data = extra_data(extras_curve_fake(), {"poles": True, "knots": True, "comb": 0.5})
+    assert data["poles"] == [[0.0, 1.0, 0.0], [0.5, 2.0, 0.0], [1.0, 1.0, 0.0]]
+    assert data["knots"] == [[0.0, 0.0, 0.0], [0.5, 0.0, 0.0], [1.0, 0.0, 0.0]]
+    assert data["comb"]["scale"] == 0.5
+    teeth = data["comb"]["teeth"]
+    assert len(teeth) == 81
+    base, tip = teeth[0]
+    assert base == pytest.approx([0.0, 0.0, 0.0])
+    assert tip == pytest.approx([0.0, 1.0, 0.0])  # normal (0, 1, 0) × scale 0.5 × curvature 2
+
+
+def test_teaching_extras_are_absent_unless_asked_for_and_do_not_apply():
+    assert extra_data(extras_curve_fake(), {}) == {}
+    assert extra_data(extras_curve_fake(), {"normals": 3}) == {}
+    sphere = fake("Sphere", {"type": "sphere", "frame": FLAT, "r": 1.0}, center=Point3D(0, 0, 0), radius=1.0)
+    assert extra_data(sphere, {"poles": True, "knots": True, "comb": 1.0}) == {}
+
+
+def _with_unit_normal(surface, geom):
+    """Give a fake surface the kernel's ``normal(u, v)``, by central differences on ``geom``."""
+    def normal(self, u, v, h=1e-6):
+        du = [a - b for a, b in zip(eval_surface(geom, u + h, v), eval_surface(geom, u - h, v))]
+        dv = [a - b for a, b in zip(eval_surface(geom, u, v + h), eval_surface(geom, u, v - h))]
+        n = [du[1] * dv[2] - du[2] * dv[1], du[2] * dv[0] - du[0] * dv[2], du[0] * dv[1] - du[1] * dv[0]]
+        return Point3D(*[c / math.hypot(*n) for c in n])
+    type(surface).normal = normal
+    return surface
+
+
+def test_surface_normals_are_sampled_over_the_surface_window():
+    geom = {"type": "sphere", "frame": FLAT, "r": 1.0}
+    sphere = _with_unit_normal(fake("Sphere", geom, center=Point3D(0, 0, 0), radius=1.0), geom)
+    normals = extra_data(sphere, {"normals": 2})["normals"]
+    assert len(normals) == 4
+    for base, tip in normals:
+        assert math.hypot(*base) == pytest.approx(1.0)  # the point is on the unit sphere
+        assert math.hypot(*[tip[i] - base[i] for i in range(3)]) > 0.0
+
+
+def _bare_viewer():
+    from geomcore_viewer.viewer import Viewer
+
+    viewer = Viewer.__new__(Viewer)
+    viewer._next_color, viewer._next_auto, viewer.run, viewer.objects = 0, 0, "abcdef", {}
+    return viewer
+
+
+def test_add_attaches_the_computed_extras_to_the_object():
+    curve = fake("BSplineCurve3D", {"type": "line", "o": [0, 0, 0], "d": [1, 0, 0]},
+                 bounds=(0.0, 1.0), poles=[Point3D(0, 0, 0), Point3D(1, 0, 0)])
+    built = _bare_viewer()._build({"label": "B", "geom": {"type": "polyline", "points": [[0, 0, 0], [1, 0, 0]]},
+                                   "exact_object": curve}, {}, None, {"poles": True}, None, None)
+    assert built["extras"] == {"poles": [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]]}
+
+
+def test_normals_cover_the_window_drawn_on_an_unbounded_surface():
+    geom = {"type": "plane", "frame": FLAT}
+    plane = _with_unit_normal(fake("Plane", geom), geom)
+    built = _bare_viewer()._build({"label": "P", "geom": geom, "exact_object": plane}, {}, None, {"normals": 3}, None, None)
+    assert built["geom"]["window"] == {"u": [-5.0, 5.0], "v": [-5.0, 5.0]}  # an empty scene's extent
+    bases = [base for base, _ in built["extras"]["normals"]]
+    assert max(abs(c) for base in bases for c in base[:2]) == pytest.approx(10.0 / 3.0)  # cell centres of ±5
+
+
+def test_real_geomcore_2d_comb_points_to_the_centre_whichever_way_the_arc_turns():
+    gc = real_geomcore()
+    if not hasattr(gc, "BSplineCurve2D"):
+        pytest.skip("needs geomcore 2D B-splines")
+    P = gc.Point2D
+    for points in ([P(1, 0), P(0, 1), P(-1, 0)], [P(-1, 0), P(0, 1), P(1, 0)]):  # counterclockwise, clockwise
+        arc = gc.BSplineCurve2D.interpolate(points, 2)
+        teeth = extra_data(arc, {"comb": 0.5})["comb"]["teeth"]
+        base, tip = teeth[len(teeth) // 2]
+        assert tip[1] < base[1]  # at the top of the arc the tooth points down, towards the centre
 
 
 def test_windows_and_extent():
@@ -631,6 +738,30 @@ def test_real_geomcore_extrusion_and_revolution_follow_the_kernel():
         assert geom["type"] == kind and geom["window"] == window
         for u, v in ((0.3, 1.7), (2.0, -0.4)):
             assert eval_surface(geom, u, v) == pytest.approx(as_vec(obj.eval_point(u, v)))
+
+
+def test_real_geomcore_teaching_extras():
+    gc = real_geomcore()
+    curve = gc.BSplineCurve3D.interpolate(
+        [gc.Point3D(0, 0, 0), gc.Point3D(1, 2, 0), gc.Point3D(3, 0, 0)], 2)
+    data = extra_data(curve, {"poles": True, "knots": True, "comb": 0.5})
+    assert data["poles"] == [as_vec(p) for p in curve.poles()]
+    t0, t1 = curve.bounds()
+    knots = [t for t in curve.knots() if t0 - 1e-12 <= t <= t1 + 1e-12]
+    assert len(data["knots"]) == len(knots)
+    for got, t in zip(data["knots"], knots):
+        assert got == pytest.approx(as_vec(curve.eval_point(t)))
+    teeth = data["comb"]["teeth"]
+    assert len(teeth) > 70 and any(math.dist(a, b) > 0.1 for a, b in teeth)
+
+    patch = gc.Cylinder(gc.Point3D(0, 0, 0), gc.Vector3D(0, 0, 1), 1.0).to_bspline_patch((0.0, 5.0), (0.0, 1.0))
+    normals = extra_data(patch, {"normals": 3})["normals"]
+    assert len(normals) == 9
+    for base, tip in normals:
+        radial = [tip[0] - base[0], tip[1] - base[1], tip[2] - base[2]]
+        assert math.hypot(base[0], base[1]) == pytest.approx(1.0)
+        assert radial[2] == pytest.approx(0.0, abs=1e-9)  # a cylinder's normal has no z component
+        assert base[0] * radial[0] + base[1] * radial[1] > 0.0  # and points away from the axis
 
 
 def test_real_geomcore_sampled_profiles_keep_the_kernel_parameter():

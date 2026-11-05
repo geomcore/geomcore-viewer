@@ -358,6 +358,90 @@ def _curve_window(geom: dict) -> tuple[float, float] | None:
     return None
 
 
+def _knot_points(obj) -> list[list[float]]:
+    """The curve's knot parameters as points on it (a Bézier is one span: its two ends)."""
+    t0, t1 = obj.bounds()
+    values = getattr(obj, "knots", None)
+    if values is None:
+        return [as_vec(obj.eval_point(t0)), as_vec(obj.eval_point(t1))]
+    return [as_vec(obj.eval_point(min(max(float(t), t0), t1)))
+            for t in values() if t0 - 1e-12 <= t <= t1 + 1e-12]
+
+
+_COMB_SAMPLES = 81
+
+
+def _curvature_comb(obj, scale: float) -> dict:
+    """Teeth from the curve to its curvature offset, at `_COMB_SAMPLES` parameters."""
+    t0, t1 = _curve_bounds(obj)
+    teeth = []
+    for i in range(_COMB_SAMPLES):
+        t = t0 + (t1 - t0) * i / (_COMB_SAMPLES - 1)
+        p = as_vec(obj.eval_point(t))
+        _, v1 = obj.eval_d1(t)
+        _, _, v2 = obj.eval_d2(t)
+        first, second = as_vec(v1), as_vec(v2)
+        tangent = _unit(first)
+        normal = _sub(second, _mul(tangent, _dot(second, tangent)))
+        if _dot(normal, normal) == 0.0:
+            continue
+        # The principal normal already points to the centre of curvature; a 2D curve's curvature
+        # is signed (negative turning clockwise), so only its size scales the tooth.
+        tip = _add(p, _mul(_unit(normal), scale * abs(float(obj.curvature(t)))))
+        teeth.append([p, tip])
+    return {"scale": scale, "teeth": teeth}
+
+
+def _surface_domain(obj, u, v) -> tuple[tuple, tuple]:
+    """(u, v) intervals to sample: the user's window, else the surface's own finite bounds
+    (a non-finite bound, or a surface with no bounds at all, falls back to ±1)."""
+    def bounds(direction):
+        getter = getattr(obj, f"{direction}_bounds", None)
+        if getter is None:
+            return (-1.0, 1.0)
+        low, high = getter()
+        return (low if math.isfinite(low) else -1.0, high if math.isfinite(high) else 1.0)
+    return (u if u is not None else bounds("u")), (v if v is not None else bounds("v"))
+
+
+def _normals(obj, count: int, u, v) -> list:
+    """`count × count` normal segments, from the kernel's ``normal(u, v)`` at the cell centres of
+    the drawn window, each as long as 8 % of the sampled patch's diagonal."""
+    count = max(1, min(int(count), 32))
+    (u0, u1), (v0, v1) = _surface_domain(obj, u, v)
+    bases, normals = [], []
+    for i in range(count):
+        for j in range(count):
+            u_at = u0 + (u1 - u0) * (i + 0.5) / count
+            v_at = v0 + (v1 - v0) * (j + 0.5) / count
+            bases.append(as_vec(obj.eval_point(u_at, v_at)))
+            normals.append(as_vec(obj.normal(u_at, v_at)))
+    if not bases:
+        return []
+    low = [min(p[k] for p in bases) for k in range(3)]
+    high = [max(p[k] for p in bases) for k in range(3)]
+    length = 0.08 * math.dist(low, high) or 1.0
+    return [[p, _add(p, _mul(n, length))] for p, n in zip(bases, normals)]
+
+
+def extra_data(obj, options: dict, u=None, v=None) -> dict:
+    """Data for the teaching extras that need the exact geomcore object, which the page never
+    receives: control poles, knot points and a curvature comb for sampled curves, normals for
+    surfaces. Keys not requested, and extras that do not apply, give nothing."""
+    data = {}
+    name = _name(obj)
+    if name in SAMPLED_CURVES:
+        if options.get("poles") and hasattr(obj, "poles"):
+            data["poles"] = [as_vec(p) for p in obj.poles()]
+        if options.get("knots"):
+            data["knots"] = _knot_points(obj)
+        if options.get("comb") and hasattr(obj, "curvature"):
+            data["comb"] = _curvature_comb(obj, float(options["comb"]))
+    if options.get("normals") and name in SURFACES | SAMPLED_SURFACES | PROFILE_SURFACES:
+        data["normals"] = _normals(obj, int(options["normals"]), u, v)
+    return data
+
+
 def _single(obj, label: str | None, u, v) -> list[dict]:
     name = _name(obj)
     if name in POINTS:

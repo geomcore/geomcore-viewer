@@ -1,5 +1,5 @@
 import { halfSize } from "../geom/bounds";
-import { curveExtras } from "../geom/extras";
+import { curveExtras, dataExtras } from "../geom/extras";
 import { liftPcurve, pcurveSurface } from "../geom/pcurve";
 import { Sampled, dashPolyline } from "../geom/sample";
 import { evalSurface } from "../geom/surfaces";
@@ -168,7 +168,9 @@ export function objectDraw3D(o: SceneObject, ctx: Context3D): ObjectDraw3D {
       stroke(extras.lines.flatMap((l) => curvePieces(l, ctx.box, tol).map((s) => s.pts)), true);
       if (extras.points.length) {
         out.markers.push({ id: o.id, at: extras.points.map((x) => x.p), color, px: EXTRA_DOT_PX, alpha, extra: true });
-        for (const x of extras.points) out.texts.push({ key: `x:${o.id}:${x.name}`, id: o.id, text: x.name, at: x.p, color: null, kind: "extra" });
+        for (const x of extras.points) {
+          if (x.name) out.texts.push({ key: `x:${o.id}:${x.name}`, id: o.id, text: x.name, at: x.p, color: null, kind: "extra" });
+        }
       }
     }
   } else if (isPcurve(g)) {
@@ -202,6 +204,14 @@ export function objectDraw3D(o: SceneObject, ctx: Context3D): ObjectDraw3D {
     if (g.positions.length) out.texts.push({ key: `p:${o.id}`, id: o.id, text: labelOf(o), at: g.positions[0], color: null, kind: "point" });
   } else if (g.type === "text") {
     out.texts.push({ key: `t:${o.id}`, id: o.id, text: g.text, at: g.at, color: o.style?.color ? color : null, kind: "text" });
+  }
+  if (o.extras) {
+    // Extras the client computed from the exact object: control polygons, knot points, combs, normals.
+    const data = dataExtras(o.extras);
+    stroke(data.paths ?? [], true);
+    if (data.points.length) {
+      out.markers.push({ id: o.id, at: data.points.map((x) => x.p), color, px: EXTRA_DOT_PX, alpha, extra: true });
+    }
   }
   return out;
 }

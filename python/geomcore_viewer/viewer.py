@@ -11,14 +11,17 @@ import webbrowser
 from pathlib import Path
 from urllib.parse import quote
 
-from .adapt import PALETTE, SURFACE_TYPES, as_vec, indexed, missing_window, scene_extent, to_objects, uv_curve, with_window
+from .adapt import PALETTE, SURFACE_TYPES, as_vec, extra_data, indexed, missing_window, scene_extent, to_objects, uv_curve, with_window
 from .server import PROTOCOL, default_url
 from .spawn import ensure_server, probe, refused_hint
 
 # Categorical palette: every colour has contrast ≥ 3:1 on the viewer's light (#f7f8fa) and
 # dark (#16181d) backgrounds (spec §3.5, tests/test_viewer.py), so it reads on a projector.
 STYLE_KEYS = ("color", "width", "dashed", "opacity")
-EXTRA_KEYS = frozenset({"foci", "center", "axes", "asymptotes", "directrix", "vertex", "isolines", "wire"})
+EXTRA_KEYS = frozenset({
+    "foci", "center", "axes", "asymptotes", "directrix", "vertex", "isolines", "wire",
+    "poles", "knots", "comb", "normals",
+})
 VIEWS = ("auto", "2d", "3d")
 
 _default: Viewer | None = None
@@ -99,16 +102,22 @@ class Viewer:
 
         Style: ``color``, ``width``, ``dashed``, ``opacity``. Curve extras:
         ``foci``, ``center``, ``axes``, ``asymptotes``, ``directrix``,
-        ``vertex``; surface extras ``isolines``, ``wire``; ``u=``/``v=``
-        set a surface's parameter window. Re-adding a ``label`` replaces
-        what that label showed before.
+        ``vertex``; B-spline and Bézier extras: ``poles`` (control polygon),
+        ``knots`` (knot points), ``comb=scale`` (curvature comb); surface extras
+        ``isolines``, ``wire``, ``normals=n``; ``u=``/``v=`` set a surface's
+        parameter window. Re-adding a ``label`` replaces what that label showed
+        before.
         """
         if not objs:
             raise TypeError("add() needs at least one object")
         parts: list[dict] = []
         for i, obj in enumerate(objs, start=1):
             part_label = label if len(objs) == 1 or label is None else indexed(label, i)
-            parts += to_objects(obj, part_label, u=u, v=v)
+            object_parts = to_objects(obj, part_label, u=u, v=v)
+            if len(object_parts) == 1:
+                # Poles, knots, combs and normals come from the exact object, once its window is known.
+                object_parts[0]["exact_object"] = obj
+            parts += object_parts
         return self._commit(parts, label, group, options, u, v)
 
     def pcurve(self, curve, on, *, label: str | None = None, group: str | None = None, **options):
@@ -182,8 +191,12 @@ class Viewer:
             color = previous.get("color") or part_style.get("color") or self._color()
             applied = {k: x for k, x in style.items() if k not in part.get("keeps_style", ())}
             obj["style"] = {**part_style, "color": color, **applied}
-        if extras:
-            obj["extras"] = dict(extras)
+        computed = {}
+        if part.get("exact_object") is not None:
+            window = geom.get("window") or {}
+            computed = extra_data(part["exact_object"], extras, window.get("u", u), window.get("v", v))
+        if extras or computed:
+            obj["extras"] = {**extras, **computed}
         if part.get("meta"):
             obj["meta"] = part["meta"]
         _check_serializable(obj)
