@@ -27,7 +27,8 @@ jobs:
       - run: npm run build
       - run: npm run e2e
   python:
-    runs-on: ubuntu-latest
+    # Python 3.9 is not in the ubuntu-latest (26.04) tool cache; 22.04 still has it.
+    runs-on: ubuntu-22.04
     strategy:
       matrix:
         python-version: ["3.9", "3.12"]
@@ -36,6 +37,17 @@ jobs:
       - uses: actions/setup-python@v5
         with: { python-version: "${{ matrix.python-version }}" }
       - run: pip install pytest
+      - run: pytest python/tests -q
+        env: { PYTHONPATH: python }
+  geomcore-latest:
+    # The adapter and examples against the newest geomcore on PyPI: the class-name renames
+    # (0.39) and API moves (0.43) must not break a fresh install.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install --upgrade geomcore pytest
       - run: pytest python/tests -q
         env: { PYTHONPATH: python }
   wheel:

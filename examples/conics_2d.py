@@ -2,15 +2,16 @@
 
 Run:   python examples/conics_2d.py            (re-run after every edit; the tab updates in place)
 Save:  python examples/conics_2d.py --save frontend/public/sample-scene.json
-Needs geomcore (pip install geomcore, or PYTHONPATH=../geomcore/geomcore-py).
+Needs geomcore (pip install geomcore, or PYTHONPATH=../geomcore/geomcore-py); the examples use
+the current class names, geomcore 0.39 or later.
 """
 
 from __future__ import annotations
 
 import argparse
 
-from geomcore import Frame3D, Point3D, Vector3D
-from geomcore.curves import Circle3D, Ellipse3D, Hyperbola3D, Line3D
+from geomcore import Frame, Point, Vector
+from geomcore.curves import Circle, Ellipse, Hyperbola, Line
 
 import geomcore_viewer as gv
 
@@ -20,10 +21,10 @@ args = parser.parse_args()
 
 view = gv.Viewer("Conics and their intersections", spawn=args.save is None)
 
-E = Ellipse3D.from_frame(Frame3D.world(), 3.0, 2.0)
-C = Circle3D(Point3D(2.0, 1.0, 0.0), Vector3D.unit_z(), 1.5)
-H = Hyperbola3D.from_frame(Frame3D.world(), 1.0, 0.5)
-L = Line3D(Point3D(0.0, -3.0, 0.0), Vector3D(1.0, 1.0, 0.0))
+E = Ellipse.from_frame(Frame.world(), 3.0, 2.0)
+C = Circle(Point(2.0, 1.0, 0.0), Vector.unit_z(), 1.5)
+H = Hyperbola.from_frame(Frame.world(), 1.0, 0.5)
+L = Line(Point(0.0, -3.0, 0.0), Vector(1.0, 1.0, 0.0))
 
 view.add(E, label="E", group="conics", foci=True)
 view.add(C, label="C", group="conics")

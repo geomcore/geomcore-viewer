@@ -7,13 +7,13 @@ browser tab that updates as your script, debugger or notebook runs.
 
 ```python
 # conics.py — run with: python conics.py   (re-run after every edit)
-from geomcore import Frame3D, Point3D, Vector3D
-from geomcore.curves import Circle3D, Ellipse3D
+from geomcore import Frame, Point, Vector
+from geomcore.curves import Circle, Ellipse
 import geomcore_viewer as gv
 
 view = gv.Viewer("Ellipse ∩ circle")
-E = Ellipse3D.from_frame(Frame3D.world(), 3.0, 2.0)
-C = Circle3D(Point3D(2, 1, 0), Vector3D.unit_z(), 1.5)
+E = Ellipse.from_frame(Frame.world(), 3.0, 2.0)
+C = Circle(Point(2, 1, 0), Vector.unit_z(), 1.5)
 
 view.add(E, label="E")
 view.add(C, label="C")
@@ -44,9 +44,11 @@ pip install geomcore-viewer        # stdlib only; the built viewer ships in the 
 ```
 
 The viewer itself has no dependencies, but the quick-start above and the scripts in
-`examples/` build their objects with geomcore 0.36 or later: `pip install "geomcore>=0.36"`, or, from a
+`examples/` build their objects with geomcore 0.39 or later, whose classes have the
+current names (`Point`, `Circle`, `Ellipse`…): `pip install "geomcore>=0.39"`, or, from a
 source checkout, `PYTHONPATH=../geomcore/geomcore-py` (add `python` when running
-from this repo, as in the Development section).
+from this repo, as in the Development section). The adapter also still accepts the
+pre-0.39 names (`Point3D`, `Circle3D`…), so older kernels keep working.
 
 ## API
 
@@ -55,7 +57,7 @@ from this repo, as in the Development section).
 | `gv.Viewer(title, view="auto"\|"2d"\|"3d", keep=False)` | a scene (new run) |
 | `view.add(*objs, label=, group=, color=, width=, dashed=, opacity=, u=, v=, foci=, asymptotes=, …)` | show objects → `Handle` / list |
 | `handle.update(color=…)`, `handle.remove()` | change or remove one object |
-| `view.pcurve(curve, on=surface)` | a `Line2D`, `Circle2D` (e.g. `circle.parametrize_on(cyl)`) or `(u, v)` pairs drawn on a surface already added |
+| `view.pcurve(curve, on=surface)` | a `Line2D`, `Circle2D` (e.g. `cyl.curve_3d_to_uv(circle)`, or `circle.parametrize_on(cyl)` before 0.43) or `(u, v)` pairs drawn on a surface already added |
 | `view.polyline(pts)`, `view.mesh(v, i)`, `view.arrow(at, vec)`, `view.text(at, s)` | raw geometry |
 | `view.clear()`, `view.save(path)`, `view.open()` | housekeeping |
 | `gv.add(...)`, `gv.clear()` | same, on the most recent viewer (handy in `pdb`) |
@@ -87,16 +89,16 @@ nothing to unpack. Supported: `CurveProjection`, `CurveProjection2D`,
 `CurveCurveExtrema`.
 
 ```python
-from geomcore import Frame3D, Point3D, Vector3D
-from geomcore.curves import Circle3D, Ellipse3D
+from geomcore import Frame, Point, Vector
+from geomcore.curves import Circle, Ellipse
 import geomcore_viewer as gv
 
 view = gv.Viewer("Results")
-E = Ellipse3D.from_frame(Frame3D.world(), 3.0, 2.0)
-C = Circle3D(Point3D(2, 1, 0), Vector3D.unit_z(), 1.5)
+E = Ellipse.from_frame(Frame.world(), 3.0, 2.0)
+C = Circle(Point(2, 1, 0), Vector.unit_z(), 1.5)
 
-view.add(E.project_point(Point3D(4, 3, 0)), label="closest")  # projection
-view.add(C.intersect(E), label="P")                           # intersection
+view.add(E.project_point(Point(4, 3, 0)), label="closest")  # projection
+view.add(C.intersect(E), label="P")                         # intersection
 ```
 
 Each result draws as one group named after its label (or after the operands

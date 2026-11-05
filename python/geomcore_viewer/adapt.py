@@ -36,6 +36,21 @@ SAMPLED = frozenset({"BSplineCurve3D", "BSplineSurface"})
 GEOMETRY = CURVES | SURFACES | POINTS | SAMPLED
 SURFACE_TYPES = frozenset({"plane", "cylinder", "cone", "sphere", "torus"})
 
+# geomcore 0.39 renamed the 3D classes (the suffix moved to the 2D ones) and 0.43 removed the
+# old names. The adapter dispatches on the old ones, so current names map back before the
+# lookups; dispatching on a class name means this module never has to import geomcore.
+LEGACY_NAMES = {"Point": "Point3D", "Vector": "Vector3D", "Line": "Line3D", "Circle": "Circle3D",
+                "Ellipse": "Ellipse3D", "Parabola": "Parabola3D", "Hyperbola": "Hyperbola3D",
+                "BSplineCurve": "BSplineCurve3D", "TrimmedCurve": "TrimmedCurve3D"}
+
+
+def _name(obj) -> str:
+    """The object's class name, mapped back when it comes from an installed geomcore that has
+    renamed it."""
+    name = type(obj).__name__
+    return LEGACY_NAMES.get(name, name)
+
+
 POINT_TAGS = frozenset({"point", "one_point", "tangent_point", "apex_point", "two_points", "points", "hits"})
 CURVE_TAGS = frozenset({
     "line", "two_lines", "tangent_line", "circle", "two_circles", "tangent_circle", "ellipse", "parabola", "hyperbola",
@@ -245,7 +260,7 @@ def _surface_geom(obj, name: str) -> dict:
 
 
 def _single(obj, label: str | None, u, v) -> list[dict]:
-    name = type(obj).__name__
+    name = _name(obj)
     if name in POINTS:
         geom = {"type": "point", "p": as_vec(obj)}
     elif name in CURVES:
@@ -266,7 +281,7 @@ def _single(obj, label: str | None, u, v) -> list[dict]:
         geom = {"type": "mesh", "vertices": vertices, "indices": indices}
     else:
         raise TypeError(name)
-    return [{"label": label, "geom": geom, "source": name}]
+    return [{"label": label, "geom": geom, "source": type(obj).__name__}]
 
 
 UV_CURVES = frozenset({"Line2D", "Circle2D"})
@@ -276,7 +291,7 @@ def uv_curve(curve) -> dict:
     """A pcurve's curve as protocol geometry in z = 0 (x is u, y is v): a geomcore ``Line2D`` or
     ``Circle2D`` (what ``curve.parametrize_on(surface)`` returns), or a sequence of ``(u, v)``
     pairs, which becomes a polyline."""
-    name = type(curve).__name__
+    name = _name(curve)
     if name in UV_CURVES:
         [part] = _single(curve, None, None, None)
         return part["geom"]
@@ -313,7 +328,7 @@ def _hit(item):
     at least one number (or tuple of numbers); None for anything else."""
     if not isinstance(item, tuple):
         return None
-    geoms = [x for x in item if type(x).__name__ in GEOMETRY]
+    geoms = [x for x in item if _name(x) in GEOMETRY]
     if len(geoms) != 1 or len(item) < 2:
         return None
     params = [_numeric(x) for x in item if x is not geoms[0]]
@@ -327,7 +342,7 @@ def _leaves(payload) -> list[tuple]:
     numbers of its hit tuple (``(t, P, s)`` → ``[t, s]``), None for a bare geometry."""
     if payload is None:
         return []
-    if type(payload).__name__ in GEOMETRY:
+    if _name(payload) in GEOMETRY:
         return [(payload, None)]
     hit = _hit(payload)
     if hit is not None:
@@ -414,7 +429,7 @@ def _projection(result, label: str | None, u=None, v=None) -> list[dict]:
     if label is None:
         label = f"projection on {type(result.target).__name__}"
     if type(result).__name__ == "SurfaceProjection":
-        name = type(result.target).__name__
+        name = _name(result.target)
         bounds_u, bounds_v, half = _surface_window_bounds(name, result, u, v)
         [target] = _single(result.target, None, bounds_u, bounds_v)
         if name in _INFINITE or name.lower() in _INFINITE:
@@ -485,7 +500,7 @@ def _operand_window(operand, reference_points, user_u, user_v) -> tuple[tuple | 
     or a fixed half-size when there is nothing to project. Independent of anything else in the scene.
     A user's ``u`` / ``v`` wins.
     """
-    kind = type(operand).__name__.lower()
+    kind = _name(operand).lower()
     point_class = type(operand.eval_point(0.0, 0.0))
     step = max(1, math.ceil(len(reference_points) / _REFERENCE_POINT_LIMIT))
     projections = [operand.project_point(point_class(*p)) for p in reference_points[::step]]
@@ -534,7 +549,7 @@ def _curve_operand(result):
     curve = getattr(result, "curve", None)
     if curve is not None:
         return curve
-    first_is_surface = type(result.first).__name__ in SURFACES | {"BSplineSurface"}
+    first_is_surface = _name(result.first) in SURFACES | {"BSplineSurface"}
     return result.second if first_is_surface else result.first
 
 
@@ -608,8 +623,7 @@ def _intersection(result, label: str | None, u=None, v=None) -> list[dict]:
     defaults: ``color=`` or ``dashed=`` given to ``add`` override them; ``opacity=`` applies to the
     operands only.
     """
-    first_name, second_name = type(result.first).__name__, type(result.second).__name__
-    label = label or f"{first_name} × {second_name}"
+    label = label or f"{type(result.first).__name__} × {type(result.second).__name__}"
     parts = []
     for i, piece in enumerate(getattr(result, "curves", ()), start=1):
         [curve] = _single(piece.curve, None, None, None)
@@ -637,8 +651,7 @@ def _intersection(result, label: str | None, u=None, v=None) -> list[dict]:
 
 def _extrema(result, label: str | None, u=None, v=None) -> list[dict]:
     """Both curves translucent and a dashed segment joining the two points of each minimum."""
-    first_name, second_name = type(result.first).__name__, type(result.second).__name__
-    label = label or f"{first_name} × {second_name} extrema"
+    label = label or f"{type(result.first).__name__} × {type(result.second).__name__} extrema"
     parts = []
     for i, minimum in enumerate(result.minima, start=1):
         ends = [as_vec(result.first.eval_point(minimum.first_parameter)),
@@ -675,7 +688,7 @@ def to_objects(obj, label: str | None = None, *, u=None, v=None) -> list[dict]:
         return parts
     if _is_result(obj):
         return _result(obj[0], obj[1], label, u, v)
-    if type(obj).__name__ in GEOMETRY:
+    if _name(obj) in GEOMETRY:
         return _single(obj, label, u, v)
     if isinstance(obj, (list, tuple)):
         if not obj:

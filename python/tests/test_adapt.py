@@ -1,9 +1,11 @@
 import math
+from functools import lru_cache
 
 import pytest
 
 from geomcore_viewer.adapt import (
     ACCENT,
+    LEGACY_NAMES,
     PALETTE,
     TAU,
     _frame,
@@ -107,6 +109,36 @@ def test_convention_mismatch_raises():
         to_objects(lying)
 
 
+# geomcore 0.39 renamed the 3D classes and 0.43 dropped the old names; the adapter dispatches on
+# the old names through the legacy map.
+RENAMED_CASES = [
+    ("Line", {"type": "line", "o": [1.0, 2.0, 3.0], "d": [0.0, 0.0, 1.0]},
+     {"origin": Point3D(1, 2, 3), "direction": Vector3D(0.0, 0.0, 1.0)}),
+    ("Circle", {"type": "circle", "frame": TILTED, "r": 1.5},
+     {"center": Point3D(*TILTED["o"]), "radius": 1.5, "normal": Vector3D(*TILTED["z"])}),
+    ("Ellipse", {"type": "ellipse", "frame": TILTED, "a": 3.0, "b": 2.0},
+     {"center": Point3D(*TILTED["o"]), "major_radius": 3.0, "minor_radius": 2.0}),
+    ("Hyperbola", {"type": "hyperbola", "frame": TILTED, "a": 2.0, "b": 1.0},
+     {"center": Point3D(*TILTED["o"]), "major_radius": 2.0, "minor_radius": 1.0}),
+    ("Parabola", {"type": "parabola", "frame": TILTED, "f": 0.7}, {"focal": 0.7}),
+    ("BSplineCurve", {"type": "line", "o": [0.0, 0.0, 0.0], "d": [1.0, 0.0, 0.0]}, {"bounds": (0.0, 2.0)}),
+]
+
+
+@pytest.mark.parametrize("name,geom,getters", RENAMED_CASES, ids=[c[0] for c in RENAMED_CASES])
+def test_current_class_names_dispatch_on_the_legacy_map(name, geom, getters):
+    [part] = to_objects(fake(name, geom, **getters), "K")
+    assert part["source"] == name  # what the user sees is their own class name, not the legacy one
+    if name != "BSplineCurve":  # a sampled B-spline arrives as a polyline over its bounds
+        assert part["geom"]["type"] == geom["type"]
+
+
+def test_current_point_name_dispatches():
+    point = type("Point", (), {"x": 1.0, "y": 2.0, "z": 3.0})()
+    assert to_objects(point, "A") == [
+        {"label": "A", "geom": {"type": "point", "p": [1.0, 2.0, 3.0]}, "source": "Point"}]
+
+
 def test_points_result_gets_subscripted_labels():
     parts = to_objects(("points", [(0.1, Point3D(1, 0, 0), 0.2), (0.3, Point3D(0, 1, 0), 0.4)]), "P")
     assert [p["label"] for p in parts] == ["P₁", "P₂"]
@@ -184,11 +216,46 @@ def test_helpers():
 
 
 # --- real geomcore (skipped when it is not importable) --------------------
+# The tests keep speaking the pre-0.39 names; 0.39 renamed the 3D classes and 0.43 removed the
+# old ones, so a missing name resolves onto the renamed class (Point3D → Point, Circle3D → Circle…).
+_ALIASES = {old: new for new, old in LEGACY_NAMES.items()} | {"Frame3D": "Frame"}
+
+
+class _RealGeomcore:
+    """Attribute lookup over geomcore's root, ``curves`` and ``surfaces`` modules."""
+
+    def __init__(self, *modules):
+        self._modules = tuple(modules)
+
+    def __getattr__(self, name):
+        for module in self._modules:
+            if hasattr(module, name):
+                return getattr(module, name)
+        renamed = _ALIASES.get(name)
+        if renamed is not None:
+            for module in self._modules:
+                if hasattr(module, renamed):
+                    return getattr(module, renamed)
+        raise AttributeError(f"this geomcore has neither {name!r} nor {renamed!r}")
+
+
+@lru_cache(maxsize=None)
+def real_geomcore():
+    import importlib
+
+    geomcore = pytest.importorskip("geomcore")
+    return _RealGeomcore(geomcore, importlib.import_module("geomcore.curves"),
+                         importlib.import_module("geomcore.surfaces"))
+
+
 def test_real_geomcore_types_round_trip():
-    gc = pytest.importorskip("geomcore")
-    from geomcore import Frame3D, Point2D, Point3D as P, Vector2D, Vector3D as V
-    from geomcore.curves import Circle2D, Circle3D, Ellipse3D, Hyperbola3D, Line2D, Line3D, Parabola3D
-    from geomcore.surfaces import Cone, Cylinder, Plane, Sphere, Torus
+    gc = real_geomcore()
+    Frame3D, P, V = gc.Frame3D, gc.Point3D, gc.Vector3D
+    Point2D, Vector2D = gc.Point2D, gc.Vector2D
+    Line3D, Circle3D, Ellipse3D, Hyperbola3D, Parabola3D = (
+        gc.Line3D, gc.Circle3D, gc.Ellipse3D, gc.Hyperbola3D, gc.Parabola3D)
+    Line2D, Circle2D = gc.Line2D, gc.Circle2D
+    Cone, Cylinder, Plane, Sphere, Torus = gc.Cone, gc.Cylinder, gc.Plane, gc.Sphere, gc.Torus
 
     tilted = Frame3D(P(1, 2, 3), V(1, 1, 1), V(1, -1, 0))
     curves = [
@@ -209,13 +276,13 @@ def test_real_geomcore_types_round_trip():
         [part] = to_objects(surface)
         for u, v in ((0.0, 0.0), (1.1, -0.4), (2.5, 0.9)):
             assert eval_surface(part["geom"], u, v) == pytest.approx(as_vec(surface.eval_point(u, v)), abs=1e-9), type(surface).__name__
-    assert gc is not None
+    assert Frame3D is not None
 
 
 def test_real_geomcore_intersections():
-    pytest.importorskip("geomcore")
-    from geomcore import Frame3D, Point3D as P, Vector3D as V
-    from geomcore.curves import Circle3D, Ellipse3D
+    gc = real_geomcore()
+    Frame3D, P, V = gc.Frame3D, gc.Point3D, gc.Vector3D
+    Circle3D, Ellipse3D = gc.Circle3D, gc.Ellipse3D
 
     E = Ellipse3D.from_frame(Frame3D.world(), 3.0, 2.0)
     C = Circle3D(P(2, 1, 0), world_z(V), 1.5)
@@ -286,15 +353,18 @@ def test_uv_curves():
 
 
 def test_real_geomcore_parametrize_on_gives_a_uv_curve():
-    pytest.importorskip("geomcore")
-    from geomcore import Point3D as P, Vector3D as V
-    from geomcore.curves import Circle3D
-    from geomcore.surfaces import Cylinder, Plane
+    gc = real_geomcore()
+    P, V = gc.Point3D, gc.Vector3D
+    Circle3D, Cylinder, Plane = gc.Circle3D, gc.Cylinder, gc.Plane
+
+    def uv_curve_on(circle, surface):
+        # geomcore <= 0.42 answered from the curve; 0.43 moved it onto the surface.
+        return circle.parametrize_on(surface) if hasattr(circle, "parametrize_on") else surface.curve_3d_to_uv(circle)
 
     Y = Cylinder(P(0, 0, 0), world_z(V), 2.0)
-    q = Circle3D(P(0, 0, 1.5), world_z(V), 2.0).parametrize_on(Y)
+    q = uv_curve_on(Circle3D(P(0, 0, 1.5), world_z(V), 2.0), Y)
     assert uv_curve(q) == {"type": "line", "o": [0.0, 1.5, 0.0], "d": [1.0, 0.0, 0.0]}
-    flipped = Circle3D(P(1, 1, 0), V(0, 0, -1), 0.5).parametrize_on(Plane(P(0, 0, 0), world_z(V)))
+    flipped = uv_curve_on(Circle3D(P(1, 1, 0), V(0, 0, -1), 0.5), Plane(P(0, 0, 0), world_z(V)))
     assert uv_curve(flipped)["frame"]["z"] == pytest.approx([0.0, 0.0, -1.0])
 
 
@@ -401,10 +471,10 @@ def test_tuple_results_still_work_next_to_projections():
 
 
 def test_real_geomcore_projections():
-    pytest.importorskip("geomcore")
-    from geomcore import Point2D, Point3D as P, Vector3D as V
-    from geomcore.curves import Circle2D, Line3D
-    from geomcore.surfaces import Cylinder, Plane
+    gc = real_geomcore()
+    P, V, Line3D = gc.Point3D, gc.Vector3D, gc.Line3D
+    Point2D, Circle2D = gc.Point2D, gc.Circle2D
+    Cylinder, Plane = gc.Cylinder, gc.Plane
 
     on_line = to_objects(Line3D(P(0, 0, 0), V(1, 0, 0)).project_point(P(1, 2, 0)), "A")
     assert len(on_line) == 4 and on_line[3]["geom"]["points"] == [[1.0, 2.0, 0.0], [1.0, 0.0, 0.0]]
@@ -676,13 +746,12 @@ def test_trimmed_operand_is_sampled_over_its_bounds():
 
 
 def test_real_geomcore_intersections_and_extrema_display():
-    pytest.importorskip("geomcore")
-    import geomcore
-    from geomcore import Point2D, Point3D as P, Vector2D, Vector3D as V
-    from geomcore.curves import Circle2D, Circle3D, Line2D, Line3D
-    from geomcore.surfaces import Plane, Sphere
+    gc = real_geomcore()
+    P, V, Point2D, Vector2D = gc.Point3D, gc.Vector3D, gc.Point2D, gc.Vector2D
+    Line3D, Circle3D, Line2D, Circle2D = gc.Line3D, gc.Circle3D, gc.Line2D, gc.Circle2D
+    Plane, Sphere = gc.Plane, gc.Sphere
 
-    if not hasattr(geomcore, "CurveCurveIntersection"):
+    if not hasattr(gc, "CurveCurveIntersection"):
         pytest.skip("needs geomcore >= 0.36")
     unit_z = world_z(V)
     line = Line3D(P(0, 0, 0), V(1, 0, 0))
@@ -700,7 +769,7 @@ def test_real_geomcore_intersections_and_extrema_display():
     assert by_key(flat)["E·hit1"]["geom"]["p"] == [1.0, 0.0, 0.0]
     empty = to_objects(Plane(P(0, 0, 0), unit_z).intersect(Plane(P(0, 0, 1), unit_z)), "F")
     assert by_key(empty)["F·note"]["geom"]["text"] == "F: ∅"
-    extrema = to_objects(geomcore.curve_curve_extrema(line, Line3D(P(0, 1, 1), V(0, 1, 0))), "G")
+    extrema = to_objects(gc.curve_curve_extrema(line, Line3D(P(0, 1, 1), V(0, 1, 0))), "G")
     assert by_key(extrema)["G·minimum1"]["label"] == "d = 1"
 
 
@@ -742,9 +811,8 @@ def _live():
 
 def test_live_line_in_plane_overlap_does_not_crash():
     _live()
-    from geomcore import Point3D as P, Vector3D as V
-    from geomcore.curves import Line3D
-    from geomcore.surfaces import Plane
+    gc = real_geomcore()
+    P, V, Line3D, Plane = gc.Point3D, gc.Vector3D, gc.Line3D, gc.Plane
 
     result = Line3D(P(0, 0, 0), V(1, 0, 0)).intersect(Plane(P(0, 0, 0), world_z(V)))
     keys = by_key(to_objects(result, "L"))
@@ -754,8 +822,8 @@ def test_live_line_in_plane_overlap_does_not_crash():
 
 def test_live_plane_sphere_window_is_local_whatever_the_scene_holds():
     _live()
-    from geomcore import Point3D as P, Vector3D as V
-    from geomcore.surfaces import Plane, Sphere
+    gc = real_geomcore()
+    P, V, Plane, Sphere = gc.Point3D, gc.Vector3D, gc.Plane, gc.Sphere
     from geomcore_viewer.viewer import Viewer
 
     result = Plane(P(500, 500, 0), world_z(V)).intersect(Sphere(P(510, 500, 1), 3.0))
@@ -771,9 +839,10 @@ def test_live_plane_sphere_window_is_local_whatever_the_scene_holds():
 
 def test_live_every_result_family_displays():
     geomcore = _live()
-    from geomcore import Point2D, Point3D as P, Vector2D, Vector3D as V
-    from geomcore.curves import Circle2D, Circle3D, Line2D, Line3D
-    from geomcore.surfaces import Cone, Cylinder, Plane, Sphere
+    gc = real_geomcore()
+    P, V, Point2D, Vector2D = gc.Point3D, gc.Vector3D, gc.Point2D, gc.Vector2D
+    Line3D, Circle3D, Line2D, Circle2D = gc.Line3D, gc.Circle3D, gc.Line2D, gc.Circle2D
+    Cone, Cylinder, Plane, Sphere = gc.Cone, gc.Cylinder, gc.Plane, gc.Sphere
 
     z = world_z(V)
     results = {
@@ -781,7 +850,7 @@ def test_live_every_result_family_displays():
         "curve-curve 2D": Circle2D(Point2D(0, 0), 1.0).intersect(Line2D(Point2D(0, 0), Vector2D(1, 0))),
         "curve-surface": Line3D(P(0, 0, -2), z).intersect(Cylinder(P(0, 0, 0), z, 1.0)),
         "surface-surface": Cylinder(P(0, 0, 0), z, 2.0).intersect(Plane(P(0, 0, 0), V(1, 0, 0))),
-        "cone-sphere": Cone.from_frame(__import__("geomcore").Frame3D.world(), 0.4, 2.0).intersect(
+        "cone-sphere": Cone.from_frame(gc.Frame3D.world(), 0.4, 2.0).intersect(
             Sphere(P(0, 0, 0), 3.0)),
         "extrema": geomcore.curve_curve_extrema(Line3D(P(0, 0, 0), V(1, 0, 0)), Line3D(P(0, 1, 1), V(0, 1, 0))),
     }
@@ -795,9 +864,9 @@ def test_live_every_result_family_displays():
 
 
 def _live_curve_in_plane_cases():
-    from geomcore import Point3D as P, Vector3D as V
-    from geomcore.curves import Circle3D, Line3D
-    from geomcore.surfaces import Plane
+    gc = real_geomcore()
+    P, V = gc.Point3D, gc.Vector3D
+    Circle3D, Line3D, Plane = gc.Circle3D, gc.Line3D, gc.Plane
 
     z = V.unit_z()
     plane = Plane(P(0, 0, 0), z)
@@ -845,8 +914,10 @@ def test_curve_operand_prefers_the_curve_property_then_falls_back_to_the_type():
 
 def test_live_projection_onto_a_trimmed_curve_draws_the_trimmed_range():
     _live()
-    from geomcore import Point2D, Point3D as P, Vector2D, Vector3D as V
-    from geomcore.curves import Circle2D, Circle3D, Line2D, Line3D, TrimmedCurve2D, TrimmedCurve3D
+    gc = real_geomcore()
+    P, V, Point2D, Vector2D = gc.Point3D, gc.Vector3D, gc.Point2D, gc.Vector2D
+    Line3D, Circle3D, Line2D, Circle2D = gc.Line3D, gc.Circle3D, gc.Line2D, gc.Circle2D
+    TrimmedCurve2D, TrimmedCurve3D = gc.TrimmedCurve2D, gc.TrimmedCurve3D
 
     trimmed_3d = TrimmedCurve3D(Line3D(P(0, 0, 0), V(1, 0, 0)), 1.0, 3.0)
     parts = to_objects(trimmed_3d.project_point(P(2, 1, 0)), "T")
@@ -864,20 +935,22 @@ def test_live_projection_onto_a_trimmed_curve_draws_the_trimmed_range():
 
 def test_live_default_group_names_are_identical_across_two_calls():
     _live()
-    from geomcore import Point3D as P, Vector3D as V
-    from geomcore.curves import Circle3D, Line3D
+    gc = real_geomcore()
+    P, V = gc.Point3D, gc.Vector3D
+    Circle3D, Line3D = gc.Circle3D, gc.Line3D
 
     circle, line = Circle3D(P(0, 0, 0), V.unit_z(), 1.0), Line3D(P(0, 0, 0), V(1, 0, 0))
     first_call = to_objects(circle.intersect(line))
     second_call = to_objects(circle.intersect(line))
     assert [(p["key"], p.get("group")) for p in first_call] == [(p["key"], p.get("group")) for p in second_call]
-    assert {p["group"] for p in first_call if "group" in p} == {"Circle3D × Line3D"}
+    assert {p["group"] for p in first_call if "group" in p} == {
+        f"{type(circle).__name__} × {type(line).__name__}"}
 
 
 def test_live_2d_closest_point_is_lifted_to_z_zero():
     _live()
-    from geomcore import Point2D
-    from geomcore.curves import Circle2D
+    gc = real_geomcore()
+    Point2D, Circle2D = gc.Point2D, gc.Circle2D
 
     parts = to_objects(Circle2D(Point2D(0, 0), 1.0).project_point(Point2D(3, 0)), "Q")
     keys = by_key(parts)
