@@ -65,7 +65,8 @@ pre-0.39 names (`Point3D`, `Circle3D`…), so older kernels keep working.
 
 Default windows for infinite surfaces (planes, cylinders, cones) are computed
 from the objects already added, so add the finite objects first or pass `u=`
-and `v=`.
+and `v=`. A `BSplineSurface` draws its own knot domain unless `u=`/`v=` narrows
+it to a sub-region.
 
 The server listens on `http://127.0.0.1:8765` by default. If that port is
 busy, set `GEOMCORE_VIEWER_URL=http://127.0.0.1:<other port>` (every script

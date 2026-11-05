@@ -188,12 +188,39 @@ def test_lists():
         to_objects(object())
 
 
-def test_bspline_surface_needs_window():
-    surf = type("BSplineSurface", (), {"eval_point": lambda self, u, v: Point3D(u, v, 0.0)})()
-    with pytest.raises(TypeError, match="u=.*v="):
-        to_objects(surf)
-    [part] = to_objects(surf, u=(0, 1), v=(0, 1))
+def _bspline_surface(u_bounds=(0.0, 2.0), v_bounds=(-1.0, 1.0)):
+    return type("BSplineSurface", (), {
+        "eval_point": lambda self, u, v: Point3D(u, v, 0.0),
+        "u_bounds": lambda self: u_bounds,
+        "v_bounds": lambda self: v_bounds,
+    })()
+
+
+def test_bspline_surface_draws_its_own_domain():
+    [part] = to_objects(_bspline_surface())
     assert part["geom"]["type"] == "mesh"
+    vertices = part["geom"]["vertices"]
+    assert len(vertices) == 49 * 49
+    xs = [p[0] for p in vertices]
+    ys = [p[1] for p in vertices]
+    assert (min(xs), max(xs)) == (0.0, 2.0)
+    assert (min(ys), max(ys)) == (-1.0, 1.0)
+
+
+def test_bspline_surface_user_window_narrows_the_domain():
+    [part] = to_objects(_bspline_surface(), u=(0.5, 1.5), v=(0.0, 0.5))
+    vertices = part["geom"]["vertices"]
+    xs = [p[0] for p in vertices]
+    ys = [p[1] for p in vertices]
+    assert (min(xs), max(xs)) == pytest.approx((0.5, 1.5))
+    assert (min(ys), max(ys)) == pytest.approx((0.0, 0.5))
+
+
+def test_bspline_surface_clamps_a_non_finite_bound():
+    [part] = to_objects(_bspline_surface(u_bounds=(-math.inf, math.inf)))
+    vertices = part["geom"]["vertices"]
+    xs = [p[0] for p in vertices]
+    assert (min(xs), max(xs)) == (-100.0, 100.0)
 
 
 def test_windows_and_extent():
@@ -440,6 +467,21 @@ def test_real_geomcore_2d_curves_become_pcurves():
     if hasattr(gc, "BSplineCurve2D"):  # geomcore >= 0.43
         bspline = uv_curve(gc.Circle2D(P(0, 0), 1.0).to_bspline())
         assert bspline["type"] == "polyline" and len(bspline["points"]) == 257
+
+
+def test_real_geomcore_bspline_surface_uses_its_own_bounds():
+    gc = real_geomcore()
+    patch = gc.Sphere(gc.Point3D(0, 0, 0), 2.0).to_bspline_patch((0.0, 3.0), (-1.0, 1.0))
+    [part] = to_objects(patch)
+    vertices = part["geom"]["vertices"]
+    assert len(vertices) == 49 * 49
+    assert all(math.hypot(*p) == pytest.approx(2.0, abs=1e-9) for p in vertices)
+    assert vertices[0] == pytest.approx(as_vec(patch.eval_point(0.0, -1.0)))
+    assert vertices[-1] == pytest.approx(as_vec(patch.eval_point(3.0, 1.0)))
+    [narrowed] = to_objects(patch, u=(0.5, 1.0), v=(-0.5, 0.5))
+    vertices = narrowed["geom"]["vertices"]
+    assert vertices[0] == pytest.approx(as_vec(patch.eval_point(0.5, -0.5)))
+    assert vertices[-1] == pytest.approx(as_vec(patch.eval_point(1.0, 0.5)))
 
 
 # --- projection results (geomcore >= 0.36) ---------------------------------

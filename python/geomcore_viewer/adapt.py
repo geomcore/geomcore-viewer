@@ -26,6 +26,7 @@ _CHECK_T = 0.7
 _CHECK_UV = (0.7, 0.3)
 _BSPLINE_SEGMENTS = 256
 _BSPLINE_GRID = 48
+_BOUND_DEFAULT = 100.0
 _WINDOW_MIN_HALF_SIZE = 1.0
 _WINDOW_DISTANCE_FACTOR = 1.5
 
@@ -260,6 +261,14 @@ def _surface_geom(obj, name: str) -> dict:
     raise TypeError(name)
 
 
+def _sampled_bounds(obj, direction: str) -> tuple[float, float]:
+    """A surface's parameter domain in ``direction``: its ``u_bounds()``/``v_bounds()`` when
+    geomcore reports them, with a non-finite bound clamped to ±[``_BOUND_DEFAULT``] (as the Rust
+    client does) so it can be sampled."""
+    t0, t1 = getattr(obj, f"{direction}_bounds")()
+    return (t0 if math.isfinite(t0) else -_BOUND_DEFAULT, t1 if math.isfinite(t1) else _BOUND_DEFAULT)
+
+
 def _single(obj, label: str | None, u, v) -> list[dict]:
     name = _name(obj)
     if name in POINTS:
@@ -276,9 +285,10 @@ def _single(obj, label: str | None, u, v) -> list[dict]:
     elif name in TRIMMED_CURVES:
         geom = _sampled_range(obj, *obj.bounds())["geom"]
     elif name == "BSplineSurface":
-        if u is None or v is None:
-            raise TypeError("BSplineSurface has no domain getter in geomcore yet: pass u=(u0, u1) and v=(v0, v1)")
-        vertices, indices = sample_surface_grid(obj.eval_point, u[0], u[1], v[0], v[1], _BSPLINE_GRID, _BSPLINE_GRID)
+        bounds_u = u if u is not None else _sampled_bounds(obj, "u")
+        bounds_v = v if v is not None else _sampled_bounds(obj, "v")
+        vertices, indices = sample_surface_grid(obj.eval_point, bounds_u[0], bounds_u[1], bounds_v[0], bounds_v[1],
+                                                _BSPLINE_GRID, _BSPLINE_GRID)
         geom = {"type": "mesh", "vertices": vertices, "indices": indices}
     else:
         raise TypeError(name)
