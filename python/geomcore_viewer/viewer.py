@@ -97,7 +97,8 @@ class Viewer:
         _default = self
 
     # -- adding ------------------------------------------------------------
-    def add(self, *objs, label: str | None = None, group: str | None = None, u=None, v=None, **options):
+    def add(self, *objs, label: str | None = None, group: str | None = None, u=None, v=None, operands=True,
+            **options):
         """Show geomcore objects, intersection results, points, or lists of them.
 
         Style: ``color``, ``width``, ``dashed``, ``opacity``. Curve extras:
@@ -105,15 +106,22 @@ class Viewer:
         ``vertex``; B-spline and Bézier extras: ``poles`` (control polygon),
         ``knots`` (knot points), ``comb=scale`` (curvature comb); surface extras
         ``isolines``, ``wire``, ``normals=n``; ``u=``/``v=`` set a surface's
-        parameter window. Re-adding a ``label`` replaces what that label showed
-        before.
+        parameter window. A result draws its operands faded, except any the
+        scene already shows (equal value, windows aside): those it reuses, so
+        removing that object later removes it from the result's display too,
+        and an operand added after the result is drawn again. Pass
+        ``operands=False`` to leave all of them out. Re-adding a ``label``
+        replaces what that label showed before.
         """
         if not objs:
             raise TypeError("add() needs at least one object")
         parts: list[dict] = []
         for i, obj in enumerate(objs, start=1):
             part_label = label if len(objs) == 1 or label is None else indexed(label, i)
-            object_parts = to_objects(obj, part_label, u=u, v=v)
+            # Re-adding a label replaces its family, so that family's operands do not count as shown.
+            replaced = set(self._families.get(label, ())) if label is not None else set()
+            existing = [o["geom"] for o in self.objects.values() if o["id"] not in replaced] + [p["geom"] for p in parts]
+            object_parts = to_objects(obj, part_label, u=u, v=v, existing=existing, operands=operands)
             if len(object_parts) == 1:
                 # Poles, knots, combs and normals come from the exact object, once its window is known.
                 object_parts[0]["exact_object"] = obj
