@@ -663,7 +663,7 @@ def _projection(result, label: str | None, u=None, v=None, existing=(), operands
     closest_meta = {"tag": "projection", "params": _numeric(params)}
     accent = {"color": ACCENT}
     neutral = {"color": QUERY_POINT_COLOR}
-    target_part = {**target, "key": f"{label}·target", "group": label}
+    target_part = {**target, "key": f"{label}·target", "group": label, "meta": {"operand": True}}
     parts = [] if operands is False or _same_value(target["geom"], existing) else [target_part]
     return parts + [
         {"label": "query point", "key": f"{label}·query", "group": label, "style": neutral,
