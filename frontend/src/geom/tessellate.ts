@@ -2,8 +2,8 @@ import { halfSize } from "./bounds";
 import { clipCurveBox } from "./clip";
 import { evalCurve } from "./curves";
 import { Sampled, sampleAdaptive } from "./sample";
-import { evalSurface, surfaceWindow } from "./surfaces";
-import type { CurveGeom, Range, SurfaceGeom } from "./types";
+import { evalProfile, evalSurface, surfaceWindow } from "./surfaces";
+import type { CurveGeom, ProfileCurve, Range, SurfaceGeom } from "./types";
 import { Box, Vec3, add, cross, norm, scale, sub } from "./vec";
 
 /** Chord tolerance of the 3D view, as a fraction of the view box's half-size (≈ 0.4 px when the scene fills the pane). */
@@ -38,6 +38,45 @@ export interface SurfaceGrid {
 }
 
 /**
+ * Segments along a profile's parameter: a polyline's index space needs one per segment, a line
+ * one, conics enough for their arc, the unbounded conics a fixed density.
+ */
+function profileSegments(profile: ProfileCurve, span: number, tol: number): number {
+  switch (profile.type) {
+    case "line":
+      return 1;
+    case "circle":
+      return arcSegments(span, profile.r, tol);
+    case "ellipse":
+      return arcSegments(span, Math.max(profile.a, profile.b), tol);
+    case "polyline": {
+      // One segment per polyline segment the span covers.
+      const segments = profile.points.length - 1;
+      const parameters = profile.range ? Math.abs(profile.range[1] - profile.range[0]) : segments;
+      return Math.min(MAX_SEGMENTS, Math.max(1, Math.ceil((Math.abs(span) * segments) / parameters)));
+    }
+    default:
+      return Math.min(MAX_SEGMENTS, Math.max(MIN_PER_TURN, Math.ceil(Math.abs(span) * 8)));
+  }
+}
+
+/** Greatest distance of the profile from the revolution axis over the v window, for the u density. */
+function revolutionRadius(g: Extract<SurfaceGeom, { type: "revolution" }>, v: Range): number {
+  const [dx, dy, dz] = g.direction;
+  const n = Math.hypot(dx, dy, dz);
+  if (n === 0) return 0;
+  const [x, y, z] = [dx / n, dy / n, dz / n];
+  let max = 0;
+  for (let i = 0; i <= 16; i++) {
+    const p = evalProfile(g.profile, v[0] + ((v[1] - v[0]) * i) / 16);
+    const [wx, wy, wz] = [p[0] - g.origin[0], p[1] - g.origin[1], p[2] - g.origin[2]];
+    const along = x * wx + y * wy + z * wz;
+    max = Math.max(max, Math.hypot(wx - along * x, wy - along * y, wz - along * z));
+  }
+  return max;
+}
+
+/**
  * The window to draw (explicit, natural, else ±fallbackHalf) and the segments per direction:
  * a straight direction (plane u and v, cylinder and cone v) needs one, a curved one as many
  * as keep the chord within `tol` of its widest circle.
@@ -65,6 +104,14 @@ export function surfaceGrid(g: SurfaceGeom, fallbackHalf: number, tol: number): 
       nu = arcSegments(du, g.R + g.r, tol);
       nv = arcSegments(dv, g.r, tol);
       break;
+    case "extrusion":
+      nu = profileSegments(g.profile, du, tol);
+      break;
+    case "revolution": {
+      nu = arcSegments(du, revolutionRadius(g, v), tol);
+      nv = profileSegments(g.profile, dv, tol);
+      break;
+    }
   }
   return { u, v, nu, nv, assumed };
 }

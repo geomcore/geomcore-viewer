@@ -11,7 +11,7 @@ import webbrowser
 from pathlib import Path
 from urllib.parse import quote
 
-from .adapt import PALETTE, SURFACE_TYPES, as_vec, indexed, scene_extent, to_objects, uv_curve, with_window
+from .adapt import PALETTE, SURFACE_TYPES, as_vec, indexed, missing_window, scene_extent, to_objects, uv_curve, with_window
 from .server import PROTOCOL, default_url
 from .spawn import ensure_server, probe, refused_hint
 
@@ -163,7 +163,9 @@ class Viewer:
     def _build(self, part: dict, style: dict, group, extras: dict, u, v) -> dict:
         geom = part["geom"]
         object_id = part.get("key") or part["label"] or self._auto_id()
-        if geom["type"] in SURFACE_TYPES and "window" not in geom:
+        # u= / v= narrow a surface even when its adapter already windowed it (a revolution's
+        # bounded profile, say).
+        if geom["type"] in SURFACE_TYPES and (missing_window(geom) or u is not None or v is not None):
             others = (o["geom"] for o in self.objects.values() if o["id"] != object_id)
             geom = with_window(geom, scene_extent(others), u, v)
         obj: dict = {"id": object_id, "geom": geom}

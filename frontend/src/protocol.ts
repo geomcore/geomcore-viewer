@@ -1,6 +1,6 @@
 // Scene protocol v2: types, validation and v1 migration. Mirrors protocol/SCENE.md.
 import { inPlaneZ0 } from "./geom/planar";
-import { CURVE_TYPES, Geom, SURFACE_TYPES, UvCurve } from "./geom/types";
+import { CURVE_TYPES, Geom, Range, SURFACE_TYPES, UvCurve } from "./geom/types";
 import type { Vec3 } from "./geom/vec";
 
 export const PROTOCOL = 2;
@@ -68,6 +68,7 @@ const FIELDS: Record<string, Record<string, FieldKind>> = {
 };
 const POSITIVE = ["r", "a", "b", "R"];
 const UV_CURVES: ReadonlySet<string> = new Set(["line", "circle", "polyline"]);
+const PROFILE_TYPES: ReadonlySet<string> = new Set([...CURVE_TYPES, "polyline"]);
 const VIEWS: ReadonlySet<string> = new Set(["auto", "2d", "3d"]);
 
 const finite = (x: unknown): x is number => typeof x === "number" && Number.isFinite(x);
@@ -116,6 +117,7 @@ function validWindow(w: unknown): boolean {
 function parseGeom(g: Record<string, unknown>): Geom | string {
   const type = g.type as string;
   if (type === "pcurve") return parsePcurve(g);
+  if (type === "extrusion" || type === "revolution") return parseSweepSurface(type, g);
   const fields = Object.prototype.hasOwnProperty.call(FIELDS, type) ? FIELDS[type] : undefined;
   if (!fields) return `unknown type "${type}"`;
   const geom: Record<string, unknown> = { ...g };
@@ -139,6 +141,31 @@ function parseGeom(g: Record<string, unknown>): Geom | string {
     return `${type}.window must be {u?: [a, b], v?: [a, b]}`;
   }
   if (CURVE_TYPES.has(type) && g.range !== undefined && !isRange(g.range)) return `${type}.range must be [t0, t1]`;
+  return geom as unknown as Geom;
+}
+
+/** An extrusion or revolution: its profile curve plus the sweep, and an optional window.
+ * The profile is a curve or an index-parameterized polyline. */
+function parseSweepSurface(type: "extrusion" | "revolution", g: Record<string, unknown>): Geom | string {
+  const p = record(g.profile);
+  if (!p || typeof p.type !== "string" || !PROFILE_TYPES.has(p.type)) {
+    return `${type}.profile must be a curve or a polyline`;
+  }
+  const profile = parseGeom(p);
+  if (typeof profile === "string") return `${type}.${profile}`;
+  if (p.type === "polyline" && p.range !== undefined && !(isRange(p.range) && (p.range as Range)[0] !== (p.range as Range)[1])) {
+    return `${type}.profile.range must be [t0, t1] with t0 ≠ t1`;
+  }
+  const direction = asVec(g.direction);
+  if (direction === null || Math.hypot(...direction) === 0) return `${type}.direction must be a non-zero vector`;
+  if (g.window !== undefined && !validWindow(g.window)) return `${type}.window must be {u?: [a, b], v?: [a, b]}`;
+  const geom: Record<string, unknown> = { type, profile, direction };
+  if (type === "revolution") {
+    const origin = asVec(g.origin);
+    if (origin === null) return "revolution.origin must be a point";
+    geom.origin = origin;
+  }
+  if (g.window !== undefined) geom.window = g.window;
   return geom as unknown as Geom;
 }
 

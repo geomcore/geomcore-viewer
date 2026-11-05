@@ -14,12 +14,18 @@ export type CurveGeom =
   | { type: "parabola"; frame: Frame; f: number; range?: Range }
   | { type: "hyperbola"; frame: Frame; a: number; b: number; range?: Range };
 
+/** A profile curve: an exact curve geom, or a polyline whose points are spaced evenly over `range`
+ * (indexed by point when it has none, as in a pcurve). */
+export type ProfileCurve = CurveGeom | { type: "polyline"; points: Vec3[]; range?: Range };
+
 export type SurfaceGeom =
   | { type: "plane"; frame: Frame; window?: Window }
   | { type: "cylinder"; frame: Frame; r: number; window?: Window }
   | { type: "cone"; frame: Frame; semi_angle: number; ref_radius: number; window?: Window }
   | { type: "sphere"; frame: Frame; r: number; window?: Window }
-  | { type: "torus"; frame: Frame; R: number; r: number; window?: Window };
+  | { type: "torus"; frame: Frame; R: number; r: number; window?: Window }
+  | { type: "extrusion"; profile: ProfileCurve; direction: Vec3; window?: Window }
+  | { type: "revolution"; profile: ProfileCurve; origin: Vec3; direction: Vec3; window?: Window };
 
 export type MarkerGeom =
   | { type: "polyline"; points: Vec3[] }
@@ -44,7 +50,9 @@ export interface PcurveGeom {
 export type Geom = CurveGeom | SurfaceGeom | MarkerGeom | PcurveGeom;
 
 export const CURVE_TYPES: ReadonlySet<string> = new Set(["line", "circle", "ellipse", "parabola", "hyperbola"]);
-export const SURFACE_TYPES: ReadonlySet<string> = new Set(["plane", "cylinder", "cone", "sphere", "torus"]);
+export const SURFACE_TYPES: ReadonlySet<string> = new Set([
+  "plane", "cylinder", "cone", "sphere", "torus", "extrusion", "revolution",
+]);
 
 export const isCurve = (g: Geom): g is CurveGeom => CURVE_TYPES.has(g.type);
 export const isSurface = (g: Geom): g is SurfaceGeom => SURFACE_TYPES.has(g.type);

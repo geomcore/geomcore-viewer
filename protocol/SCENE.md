@@ -58,6 +58,8 @@ unit axes `o, x, y, z` (right-handed, orthonormal).
 | `cone` | `frame`, `semi_angle`, `ref_radius` | `R = ref_radius + v sin φ`; `o + R cos u·x + R sin u·y + v cos φ·z` |
 | `sphere` | `frame`, `r` | `o + r cos v cos u·x + r cos v sin u·y + r sin v·z` |
 | `torus` | `frame`, `R`, `r` | `ρ = R + r cos v`; `o + ρ cos u·x + ρ sin u·y + r sin v·z` |
+| `extrusion` | `profile`, `direction` | `profile(u) + v·direction` |
+| `revolution` | `profile`, `origin`, `direction` | `profile(v)` rotated about the axis (`origin`, `direction`) by `u` (Rodrigues); u is the angle |
 | `mesh` | `vertices`, `indices` | triangles; `indices.length % 3 == 0` |
 | `point` | `p` | — |
 | `points` | `positions`, `size?` | point cloud |
@@ -69,6 +71,14 @@ unit axes `o, x, y, z` (right-handed, orthonormal).
 Reserved for when geomcore exposes B-spline getters (clients send
 `polyline` / `mesh` until then): `bspline_curve`, `bspline_surface`.
 
+`extrusion.profile` and `revolution.profile` are any curve type above or a
+`polyline`. A polyline profile may carry `range: [t0, t1]` (t0 ≠ t1): its
+points are then spaced evenly over that parameter interval, which is how a
+sampled B-spline or Bézier profile keeps the kernel's parametrization.
+Without `range` its parameter is the point index (segment `i` spans
+`t ∈ [i, i + 1]`, as in a `pcurve`). A revolution's `direction` is the axis
+direction and must be non-zero.
+
 Radii (`r`, `a`, `b`, `R`) must be positive and `f` non-zero.
 
 ### Ranges and windows
@@ -78,11 +88,17 @@ Radii (`r`, `a`, `b`, `R`) must be positive and `f` non-zero.
   viewer draws the part that crosses the visible region.
 - Surfaces carry `window: {"u": [a, b], "v": [a, b]}`. Closed directions
   default to their full period (`cylinder`/`cone` u, `sphere` u and
-  v ∈ [-π/2, π/2], `torus` u and v); infinite directions (`plane` u/v,
-  `cylinder`/`cone` v) should always be given. When one is missing the
-  viewer draws it over ±the half-size of the scene's view box (1.5 × the
-  scene's half-extent, at least 1) and does not flag the object. The Python
-  client always fills `window` itself, from the objects already added.
+  v ∈ [-π/2, π/2], `torus` u and v, `revolution` u); infinite directions
+  (`plane` u/v, `cylinder`/`cone` v, `extrusion` u/v for an unbounded
+  profile and v, `revolution` v for an unbounded profile) should always be
+  given. When one is missing the viewer draws it over ±the half-size of the
+  scene's view box (1.5 × the scene's half-extent, at least 1) and does not
+  flag the object. A swept profile's parameter is not a length, so that
+  half-size is converted: ÷|d| for a `line`, `min(h, 2√(|f|·h))` for a
+  `parabola`, `asinh(h / max(a, b))` for a `hyperbola`, and an extrusion's
+  sweep v is ÷|direction|. The Python client always fills `window` itself, from the
+  objects already added (and from a profile's own bounds for
+  `extrusion`/`revolution`: u for an extrusion, v for a revolution).
 - A `pcurve` takes its surface's window. A `line` or `circle` is clipped
   to it in the directions that do not wrap, so a helix on a cylinder winds
   round the seam until it leaves the v window; one those leave unbounded
