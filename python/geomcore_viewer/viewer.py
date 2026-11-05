@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import json
+import numbers
 import urllib.error
 import urllib.request
 import uuid
 import warnings
 import webbrowser
+from contextlib import contextmanager
 from pathlib import Path
 from urllib.parse import quote
 
@@ -92,6 +94,7 @@ class Viewer:
         self._resync = False  # the server may have lost our scene: re-send everything
         self._online: bool | None = None  # None until the first send
         self._warned = False
+        self._batch_depth = 0  # > 0 inside `with view.batch()`: sends wait for the exit
         self._next_color = 0
         self._next_auto = 0
         _default = self
@@ -141,20 +144,41 @@ class Viewer:
         return self._commit([{"label": label, "geom": geom}], label, group, options)
 
     def polyline(self, points, *, label: str | None = None, group: str | None = None, **options):
-        geom = {"type": "polyline", "points": [as_vec(p) for p in points]}
-        return self._commit([{"label": label, "geom": geom}], label, group, options)
+        """One polyline, or several when ``points`` is a list of point lists."""
+        geoms = [{"type": "polyline", "points": [as_vec(p) for p in one]} for one in _polylines(points)]
+        return self._commit(_labelled_geoms(geoms, label), label, group, options)
 
     def mesh(self, vertices, indices, *, label: str | None = None, group: str | None = None, **options):
         geom = {"type": "mesh", "vertices": [as_vec(p) for p in vertices], "indices": [int(i) for i in indices]}
         return self._commit([{"label": label, "geom": geom}], label, group, options)
 
     def arrow(self, at, vec, *, label: str | None = None, group: str | None = None, **options):
-        geom = {"type": "arrow", "at": as_vec(at), "vec": as_vec(vec)}
-        return self._commit([{"label": label, "geom": geom}], label, group, options)
+        """One arrow, or a list: ``at`` and ``vec`` may each be a list of points, zipped."""
+        ats = list(at) if _points_listed(at) else [at]
+        vecs = list(vec) if _points_listed(vec) else [vec]
+        geoms = [{"type": "arrow", "at": as_vec(p), "vec": as_vec(v)} for p, v in _paired(ats, vecs)]
+        return self._commit(_labelled_geoms(geoms, label), label, group, options)
 
     def text(self, at, text, *, label: str | None = None, group: str | None = None, **options):
-        geom = {"type": "text", "at": as_vec(at), "text": str(text)}
-        return self._commit([{"label": label, "geom": geom}], label, group, options)
+        """One text, or a list: ``at`` may be a list of points and ``text`` a string (repeated)
+        or a list of strings, zipped."""
+        ats = list(at) if _points_listed(at) else [at]
+        texts = list(text) if _is_sequence(text) else [text]
+        geoms = [{"type": "text", "at": as_vec(p), "text": str(t)} for p, t in _paired(ats, texts)]
+        return self._commit(_labelled_geoms(geoms, label), label, group, options)
+
+    @contextmanager
+    def batch(self):
+        """Send everything added inside the block in one request, instead of one per call:
+        ``with view.batch(): view.arrow(...) ...``. Batches nest (the outermost one sends). If the
+        block raises, what it added before the error is still sent, then the error propagates."""
+        self._batch_depth += 1
+        try:
+            yield self
+        finally:
+            self._batch_depth -= 1
+            if self._batch_depth == 0:
+                self._flush()
 
     def _commit(self, parts: list[dict], label, group, options: dict, u=None, v=None):
         style = {k: options.pop(k) for k in STYLE_KEYS if k in options and options[k] is not None}
@@ -266,7 +290,10 @@ class Viewer:
 
     # -- transport -------------------------------------------------------------
     def _flush(self) -> None:
-        """Bring the server up to date: pending clear, then deletes, then upserts."""
+        """Bring the server up to date: pending clear, then deletes, then upserts. Inside a
+        ``batch()`` block nothing is sent until the outermost block exits."""
+        if self._batch_depth:
+            return
         if not (self._unsent or self._pending_removals or self._pending_clear) or not self._connect():
             return
         if self._pending_clear:
@@ -360,6 +387,50 @@ class Viewer:
 def viewer() -> Viewer:
     """The default viewer: the most recently created one, else a new one."""
     return _default if _default is not None else Viewer()
+
+
+def _is_sequence(value) -> bool:
+    """A list, a tuple, a numpy array or any other sized iterable that is not a string."""
+    return not isinstance(value, (str, bytes)) and hasattr(value, "__len__") and hasattr(value, "__iter__")
+
+
+def _is_point(value) -> bool:
+    """A point or vector: a geomcore point/vector, or a sequence of 2 or 3 numbers (numpy rows
+    and numpy scalars included, without importing numpy)."""
+    if hasattr(value, "x") and not callable(value.x):
+        return True
+    if hasattr(value, "components"):
+        return True
+    return _is_sequence(value) and len(value) in (2, 3) and all(isinstance(c, numbers.Real) for c in value)
+
+
+def _points_listed(value) -> bool:
+    """True for a list of points (`[(0, 0), (1, 1)]`, an (N, 3) array) as opposed to one point."""
+    return _is_sequence(value) and len(value) > 0 and all(_is_point(v) for v in value)
+
+
+def _polylines(points) -> list:
+    """One polyline's point list, or a list of them when ``points`` is a list of point lists."""
+    items = list(points)
+    return [list(one) for one in items] if items and not all(_is_point(p) for p in items) else [items]
+
+
+def _paired(left, right):
+    """Zip two lists, repeating a single item; a length mismatch is a clear TypeError."""
+    a, b = list(left), list(right)
+    if len(a) == 1:
+        a *= len(b)
+    if len(b) == 1:
+        b *= len(a)
+    if len(a) != len(b):
+        raise TypeError(f"expected the same number of items, got {len(a)} and {len(b)}")
+    return zip(a, b)
+
+
+def _labelled_geoms(geoms: list[dict], label: str | None) -> list[dict]:
+    """Parts for raw geoms: `label`, or `label₁`, `label₂` … when there are several."""
+    return [{"label": label if len(geoms) == 1 or label is None else indexed(label, i), "geom": geom}
+            for i, geom in enumerate(geoms, start=1)]
 
 
 def add(*objs, **kwargs):
