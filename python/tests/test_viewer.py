@@ -410,3 +410,18 @@ def test_pcurve_needs_a_surface_in_the_scene(server):
     with pytest.raises(ValueError, match="'nope' is not a surface"):
         view.pcurve([(0, 0), (1, 1)], on="nope")
     assert _ids(server) == ["A"]
+
+
+def test_u_window_narrows_a_revolution_whose_profile_is_bounded(server):
+    """The revolution's bounded profile already sets a v window; u= must still apply."""
+    geomcore = pytest.importorskip("geomcore")
+    if not hasattr(geomcore, "Axis") or not hasattr(geomcore.surfaces, "RevolutionSurface"):
+        pytest.skip("needs geomcore >= 0.43")
+    from geomcore import Axis, Point, Vector
+    from geomcore.curves import Circle
+    from geomcore.surfaces import RevolutionSurface
+
+    view = make(server)
+    surface = RevolutionSurface(Circle(Point(3, 0, 0), Vector(0, 1, 0), 1.0), Axis(Point(0, 0, 0), Vector(0, 0, 1)))
+    view.add(surface, label="R", u=(0.0, math.pi))
+    assert view.objects["R"]["geom"]["window"] == {"u": [0.0, math.pi], "v": [0.0, 2 * math.pi]}

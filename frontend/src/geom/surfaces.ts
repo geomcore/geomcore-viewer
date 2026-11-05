@@ -4,12 +4,20 @@ import { Vec3, inFrame } from "./vec";
 
 const TAU = 2 * Math.PI;
 
-/** A profile curve's point at parameter `t`: a polyline is indexed by point (segment i is [i, i + 1]). */
+/** Where parameter `t` falls along a polyline profile, in point index (segment i is [i, i + 1]). */
+function polylineIndex(profile: Extract<ProfileCurve, { type: "polyline" }>, t: number): number {
+  if (!profile.range) return t;
+  const [t0, t1] = profile.range;
+  return ((t - t0) / (t1 - t0)) * (profile.points.length - 1);
+}
+
+/** A profile curve's point at parameter `t`; a polyline's points are spaced evenly over its `range`. */
 export function evalProfile(profile: ProfileCurve, t: number): Vec3 {
   if (profile.type !== "polyline") return evalCurve(profile, t);
-  const i = Math.max(0, Math.min(Math.floor(t), profile.points.length - 2));
+  const index = polylineIndex(profile, t);
+  const i = Math.max(0, Math.min(Math.floor(index), profile.points.length - 2));
   const [a, b] = [profile.points[i], profile.points[i + 1]];
-  const s = t - i;
+  const s = index - i;
   return [a[0] + (b[0] - a[0]) * s, a[1] + (b[1] - a[1]) * s, a[2] + (b[2] - a[2]) * s];
 }
 
@@ -57,9 +65,9 @@ export function evalSurface(g: SurfaceGeom, u: number, v: number): Vec3 {
   }
 }
 
-/** A profile's own parameter window when it is finite: a full turn for a conic, point index for a polyline. */
+/** A profile's own parameter window when it is finite: a full turn for a conic, a polyline's range. */
 function profileWindow(profile: ProfileCurve): Range | null {
-  if (profile.type === "polyline") return [0, profile.points.length - 1];
+  if (profile.type === "polyline") return profile.range ?? [0, profile.points.length - 1];
   if (profile.type === "circle" || profile.type === "ellipse") return [0, TAU];
   return null;
 }
@@ -109,8 +117,33 @@ export function periods(g: SurfaceGeom): { u: number | null; v: number | null } 
 /** Window to tessellate: explicit, else natural, else ±fallbackHalf (`assumed` = a fallback was used). */
 export function surfaceWindow(g: SurfaceGeom, fallbackHalf: number): { u: Range; v: Range; assumed: boolean } {
   const natural = naturalWindow(g);
-  const fallback: Range = [-fallbackHalf, fallbackHalf];
+  const fallback = (direction: "u" | "v"): Range => {
+    const half = parameterHalfRange(g, direction, fallbackHalf);
+    return [-half, half];
+  };
   const u = g.window?.u ?? natural.u;
   const v = g.window?.v ?? natural.v;
-  return { u: u ?? fallback, v: v ?? fallback, assumed: u === null || v === null };
+  return { u: u ?? fallback("u"), v: v ?? fallback("v"), assumed: u === null || v === null };
+}
+
+/**
+ * Half-range of parameter that keeps an infinite direction within about `extent` of its origin.
+ * The parameter is a length for a plane, a cylinder or a cone; a swept profile's or sweep's is
+ * not, so it is scaled (a hyperbola grows like exp(t)). Mirrors `_parameter_half_range` in adapt.py.
+ */
+export function parameterHalfRange(g: SurfaceGeom, direction: "u" | "v", extent: number): number {
+  if (g.type === "extrusion" && direction === "v") return extent / Math.max(Math.hypot(...g.direction), 1e-300);
+  const sweepsProfile = (g.type === "extrusion" && direction === "u") || (g.type === "revolution" && direction === "v");
+  if (!sweepsProfile) return extent;
+  const profile = g.profile;
+  switch (profile.type) {
+    case "line":
+      return extent / Math.max(Math.hypot(...profile.d), 1e-300);
+    case "parabola": // y = t, x = t² / 4f
+      return Math.min(extent, 2 * Math.sqrt(Math.abs(profile.f) * extent));
+    case "hyperbola": // (a cosh t, b sinh t)
+      return Math.asinh(extent / Math.max(profile.a, profile.b));
+    default:
+      return extent;
+  }
 }

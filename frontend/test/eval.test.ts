@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import curves from "./fixtures/curves_analytic.json";
 import surfaces from "./fixtures/surfaces_analytic.json";
 import { evalCurve } from "../src/geom/curves";
-import { evalSurface, surfaceWindow } from "../src/geom/surfaces";
-import type { CurveGeom, SurfaceGeom } from "../src/geom/types";
+import { evalSurface, parameterHalfRange, surfaceWindow } from "../src/geom/surfaces";
+import type { CurveGeom, Range, SurfaceGeom } from "../src/geom/types";
 import { Frame, Vec3, norm, sub } from "../src/geom/vec";
 
 type FxFrame = { origin: Vec3; x_dir: Vec3; y_dir: Vec3; z_dir: Vec3 };
@@ -68,6 +68,25 @@ describe("profile surfaces", () => {
   it("evaluates a polyline profile by point index, as a pcurve does", () => {
     const profile = { type: "polyline" as const, points: [[0, 0, 0], [2, 0, 0], [2, 3, 0]] as Vec3[] };
     expect(evalSurface({ type: "extrusion", profile, direction: [0, 0, 1] }, 1.5, 4)).toEqual([2, 1.5, 4]);
+  });
+
+  it("evaluates a polyline profile with a range on that parameter, its points evenly spaced", () => {
+    const profile = { type: "polyline" as const, points: [[0, 0, 0], [2, 0, 0], [2, 3, 0]] as Vec3[], range: [10, 14] as Range };
+    const g: SurfaceGeom = { type: "extrusion", profile, direction: [0, 0, 1] };
+    expect(evalSurface(g, 13, 4)).toEqual([2, 1.5, 4]);
+    expect(surfaceWindow(g, 5).u).toEqual([10, 14]);
+  });
+
+  it("keeps an unbounded profile's fallback window near the scene", () => {
+    const hyperbola: CurveGeom = { type: "hyperbola", frame: world, a: 2, b: 1 };
+    const g: SurfaceGeom = { type: "extrusion", profile: hyperbola, direction: [0, 0, 2] };
+    const { u, v } = surfaceWindow(g, 10);
+    expect(v).toEqual([-5, 5]);
+    expect(u[1]).toBeCloseTo(Math.asinh(5));
+    expect(Math.hypot(...evalSurface(g, u[1], 0))).toBeLessThan(25);
+    const parabola: CurveGeom = { type: "parabola", frame: world, f: 0.25 };
+    expect(parameterHalfRange({ type: "revolution", profile: parabola, origin: [0, 0, 0], direction: [0, 1, 0] }, "v", 10))
+      .toBeCloseTo(Math.sqrt(10));
   });
 
   it("windows a revolution over a full turn and its profile's own range", () => {

@@ -167,8 +167,9 @@ def eval_curve(g: dict, t: float) -> list[float]:
         return _add(g["o"], _mul(g["d"], t))
     if kind == "polyline":
         points = g["points"]
-        i = min(max(int(math.floor(t)), 0), len(points) - 2)
-        return _add(points[i], _mul(_sub(points[i + 1], points[i]), t - i))
+        index = _polyline_index(g, t)
+        i = min(max(int(math.floor(index)), 0), len(points) - 2)
+        return _add(points[i], _mul(_sub(points[i + 1], points[i]), index - i))
     f = g["frame"]
     if kind == "circle":
         return _in_frame(f, g["r"] * math.cos(t), g["r"] * math.sin(t))
@@ -179,6 +180,16 @@ def eval_curve(g: dict, t: float) -> list[float]:
     if kind == "hyperbola":
         return _in_frame(f, g["a"] * math.cosh(t), g["b"] * math.sinh(t))
     raise ValueError(f"not a curve: {kind}")
+
+
+def _polyline_index(g: dict, t: float) -> float:
+    """Where parameter ``t`` falls along a polyline, in point index: a polyline with a ``range``
+    spaces its points evenly over that parameter interval, one without is indexed by point."""
+    last = len(g["points"]) - 1
+    if "range" not in g:
+        return t
+    t0, t1 = g["range"]
+    return (t - t0) / (t1 - t0) * last
 
 
 def _rotate_about(p: list[float], origin: list[float], axis: list[float], angle: float) -> list[float]:
@@ -306,8 +317,12 @@ def _curve_bounds(obj) -> tuple[float, float]:
 def _profile_surface_geom(obj, name: str) -> dict:
     """An extrusion or revolution, sent exactly as its profile curve plus the sweep: the protocol
     evaluates the profile, so the surface follows it exactly. A bounded profile contributes its
-    parameter window for ``u`` (geometry sampled into a polyline is in index space)."""
-    [profile] = _single(obj.profile(), None, None, None)
+    parameter window (``u`` for an extrusion, ``v`` for a revolution). A profile sampled into a
+    polyline carries its parameter ``range``, so the surface keeps geomcore's parametrization."""
+    profile_curve = obj.profile()
+    [profile] = _single(profile_curve, None, None, None)
+    if profile["geom"]["type"] == "polyline":
+        profile["geom"]["range"] = list(_curve_bounds(profile_curve))
     if name == "ExtrusionSurface":
         geom = {"type": "extrusion", "profile": profile["geom"], "direction": as_vec(obj.direction())}
     else:
@@ -321,10 +336,23 @@ def _profile_surface_geom(obj, name: str) -> dict:
     return geom
 
 
+def _profile_check_parameters(geom: dict) -> tuple[float, float]:
+    """Where to check a swept surface against geomcore: ``_CHECK_UV``, except that a sampled
+    profile is checked at one of its sample points, where the polyline is exact."""
+    u, v = _CHECK_UV
+    profile = geom["profile"]
+    if profile["type"] != "polyline":
+        return u, v
+    t0, t1 = profile["range"]
+    segments = len(profile["points"]) - 1
+    sample = t0 + (t1 - t0) * (segments // 3) / segments
+    return (sample, v) if geom["type"] == "extrusion" else (u, sample)
+
+
 def _curve_window(geom: dict) -> tuple[float, float] | None:
     """The finite parameter interval of a curve geom, or None when its parameter runs forever."""
     if geom["type"] == "polyline":
-        return (0.0, float(len(geom["points"]) - 1))
+        return tuple(geom["range"]) if "range" in geom else (0.0, float(len(geom["points"]) - 1))
     if geom["type"] in ("circle", "ellipse"):
         return (0.0, TAU)
     return None
@@ -442,10 +470,11 @@ def _single(obj, label: str | None, u, v) -> list[dict]:
         geom = {"type": "mesh", "vertices": vertices, "indices": indices}
     elif name in PROFILE_SURFACES:
         geom = _profile_surface_geom(obj, name)
-        _check(name, as_vec(obj.eval_point(*_CHECK_UV)), eval_surface(geom, *_CHECK_UV))
+        check_uv = _profile_check_parameters(geom)
+        _check(name, as_vec(obj.eval_point(*check_uv)), eval_surface(geom, *check_uv))
     else:
         raise TypeError(name)
-    return [{"label": label, "geom": geom, "source": name}]
+    return [{"label": label, "geom": geom, "source": type(obj).__name__}]
 
 
 UV_CURVES = frozenset({"Line2D", "Circle2D"})
@@ -602,6 +631,8 @@ def _surface_window_bounds(name: str, result, u, v) -> tuple[tuple | None, tuple
         # The profile's direction keeps its own window instead of a window around the closest point
         # (u for an extrusion, v for a revolution).
         [target] = _single(result.target, None, None, None)
+        if name == "RevolutionSurface":
+            bounds_u = u  # the angle keeps its full turn, as a cylinder's does
         direction = "u" if name == "ExtrusionSurface" else "v"
         profile_window = (target["geom"].get("window") or {}).get(direction)
         if direction == "u":
@@ -622,7 +653,7 @@ def _projection(result, label: str | None, u=None, v=None) -> list[dict]:
     ``u=`` / ``v=`` say otherwise.
     """
     if label is None:
-        label = f"projection on {_name(result.target)}"
+        label = f"projection on {type(result.target).__name__}"
     if type(result).__name__ == "SurfaceProjection":
         name = _name(result.target)
         bounds_u, bounds_v, half = _surface_window_bounds(name, result, u, v)
@@ -822,8 +853,7 @@ def _intersection(result, label: str | None, u=None, v=None) -> list[dict]:
     defaults: ``color=`` or ``dashed=`` given to ``add`` override them; ``opacity=`` applies to the
     operands only.
     """
-    first_name, second_name = _name(result.first), _name(result.second)
-    label = label or f"{first_name} × {second_name}"
+    label = label or f"{type(result.first).__name__} × {type(result.second).__name__}"
     parts = []
     for i, piece in enumerate(getattr(result, "curves", ()), start=1):
         [curve] = _single(piece.curve, None, None, None)
@@ -851,8 +881,7 @@ def _intersection(result, label: str | None, u=None, v=None) -> list[dict]:
 
 def _extrema(result, label: str | None, u=None, v=None) -> list[dict]:
     """Both curves translucent and a dashed segment joining the two points of each minimum."""
-    first_name, second_name = _name(result.first), _name(result.second)
-    label = label or f"{first_name} × {second_name} extrema"
+    label = label or f"{type(result.first).__name__} × {type(result.second).__name__} extrema"
     parts = []
     for i, minimum in enumerate(result.minima, start=1):
         ends = [as_vec(result.first.eval_point(minimum.first_parameter)),
@@ -943,6 +972,26 @@ def missing_window(geom: dict) -> bool:
     return bool(_infinite_directions(geom))
 
 
+def _parameter_half_range(geom: dict, direction: str, extent: float) -> float:
+    """Half-range of parameter that keeps an infinite direction within about ``extent`` of its
+    origin. The parameter is a length for a plane, a cylinder or a cone; a swept profile's or
+    sweep's parameter is not, so it is scaled (a hyperbola grows like ``exp(t)``)."""
+    kind = geom["type"]
+    sweeps_profile = (kind, direction) in (("extrusion", "u"), ("revolution", "v"))
+    if kind == "extrusion" and direction == "v":
+        return extent / max(math.hypot(*geom["direction"]), 1e-300)
+    if not sweeps_profile:
+        return extent
+    profile = geom["profile"]
+    if profile["type"] == "line":
+        return extent / max(math.hypot(*profile["d"]), 1e-300)
+    if profile["type"] == "parabola":  # y = t, x = t² / 4f
+        return min(extent, 2.0 * math.sqrt(abs(profile["f"]) * extent))
+    if profile["type"] == "hyperbola":  # (a cosh t, b sinh t)
+        return math.asinh(extent / max(profile["a"], profile["b"]))
+    return extent
+
+
 def with_window(geom: dict, extent: float, u=None, v=None) -> dict:
     """A surface geom with ``window`` filled: an existing window kept, full periods, ±extent for
     the directions that run forever, then explicit u/v."""
@@ -953,7 +1002,8 @@ def with_window(geom: dict, extent: float, u=None, v=None) -> dict:
     for d, r in (geom.get("window") or {}).items():
         window[d] = list(r)
     for d in _infinite_directions(geom):
-        window[d] = [-float(extent), float(extent)]
+        half = _parameter_half_range(geom, d, float(extent))
+        window[d] = [-half, half]
     if u is not None:
         window["u"] = [float(u[0]), float(u[1])]
     if v is not None:
