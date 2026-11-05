@@ -10,7 +10,7 @@ export type StoreHandler = (ev: StoreEvent) => void;
 
 type LiveScene = { kind: "none" } | { kind: "error"; message: string } | { kind: "doc"; raw: unknown };
 
-const EMPTY: SceneDoc = { version: 2, title: "", run: null, view: "auto", frames: [], objects: [] };
+const EMPTY: SceneDoc = { version: 2, title: "", run: null, view: "auto", steps: [], objects: [] };
 const VIEWS: ReadonlySet<string> = new Set(["auto", "2d", "3d"]);
 
 /** Scene state for the page: loading (static or live), run swaps, problems. */
@@ -20,7 +20,7 @@ export class Store {
   title = "";
   view: ViewMode = "auto";
   run: string | null = null;
-  frames: string[] = [];
+  steps: string[] = [];
   status = "";
   private handlers = new Set<StoreHandler>();
   private swapPending = false;
@@ -57,7 +57,7 @@ export class Store {
     this.title = doc.title;
     this.view = doc.view;
     this.run = doc.run;
-    this.frames = doc.frames ?? [];
+    this.steps = doc.steps ?? [];
     this.swapPending = false;
     this.emit({ type: "reset" });
   }
@@ -92,8 +92,8 @@ export class Store {
         }
         if (typeof ev.title === "string") this.title = ev.title;
         if (typeof ev.view === "string" && VIEWS.has(ev.view)) this.view = ev.view as ViewMode;
-        if (Array.isArray(ev.frames)) {
-          this.frames = [...new Set(ev.frames.filter((f): f is string => typeof f === "string" && f !== ""))];
+        if (Array.isArray(ev.steps)) {
+          this.steps = [...new Set(ev.steps.filter((f): f is string => typeof f === "string" && f !== ""))];
         }
         const swap = this.swapPending;
         if (swap) {

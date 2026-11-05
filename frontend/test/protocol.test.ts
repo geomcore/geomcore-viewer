@@ -98,23 +98,23 @@ describe("scalar colouring", () => {
   });
 });
 
-describe("frames", () => {
-  it("keeps a frame on the object and the ordered list on the document", () => {
+describe("steps", () => {
+  it("keeps a step on the object and the ordered list on the document", () => {
     const doc = parseDoc({
-      version: 2, title: "T", view: "3d", frames: ["a", "b", "a"],
-      objects: [{ id: "o", frame: "a", geom: { type: "point", p: [0, 0, 0] } }],
+      version: 2, title: "T", view: "3d", steps: ["a", "b", "a"],
+      objects: [{ id: "o", step: "a", geom: { type: "point", p: [0, 0, 0] } }],
     });
-    expect(doc.doc.frames).toEqual(["a", "b"]);
-    expect(doc.doc.objects[0].frame).toBe("a");
+    expect(doc.doc.steps).toEqual(["a", "b"]);
+    expect(doc.doc.objects[0].step).toBe("a");
   });
 
-  it("ignores malformed frame data", () => {
+  it("ignores malformed step data", () => {
     const doc = parseDoc({
-      version: 2, title: "", frames: ["a", 7, ""],
-      objects: [{ id: "o", frame: 5, geom: { type: "point", p: [0, 0, 0] } }],
+      version: 2, title: "", steps: ["a", 7, ""],
+      objects: [{ id: "o", step: 5, geom: { type: "point", p: [0, 0, 0] } }],
     });
-    expect(doc.doc.frames).toEqual(["a"]);
-    expect(doc.doc.objects[0].frame).toBeUndefined();
+    expect(doc.doc.steps).toEqual(["a"]);
+    expect(doc.doc.objects[0].step).toBeUndefined();
   });
 });
 
@@ -155,7 +155,7 @@ describe("parseDoc", () => {
 
   it("reads v2 metadata and rejects other versions", () => {
     const { doc } = parseDoc({ version: 2, title: "t", run: "r", view: "2d", objects: [] });
-    expect(doc).toEqual({ version: 2, title: "t", run: "r", view: "2d", frames: [], objects: [] });
+    expect(doc).toEqual({ version: 2, title: "t", run: "r", view: "2d", steps: [], objects: [] });
     expect(() => parseDoc({ version: 3, objects: [] })).toThrow(VersionError);
   });
 });

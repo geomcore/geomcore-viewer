@@ -90,28 +90,28 @@ describe("UiState visibility and selection", () => {
     expect(ui.selected).toBe("a");
     expect(ui.collapsedGroups.has("g")).toBe(true);
   });
-  it("shows one frame at a time and keeps unscoped objects", () => {
+  it("shows one step at a time and keeps unscoped objects", () => {
     const ui = new UiState(null);
     const seen = vi.fn();
     ui.onChange(seen);
-    const a = { id: "a", frame: "one", geom: { type: "point", p: [0, 0, 0] } };
-    const b = { id: "b", frame: "two", geom: { type: "point", p: [0, 0, 0] } };
+    const a = { id: "a", step: "one", geom: { type: "point", p: [0, 0, 0] } };
+    const b = { id: "b", step: "two", geom: { type: "point", p: [0, 0, 0] } };
     const always = { id: "c", geom: { type: "point", p: [0, 0, 0] } };
-    expect(ui.inFrame(a) && ui.inFrame(b) && ui.inFrame(always)).toBe(true);
-    ui.setFrames(["one", "two"]);
-    expect(seen.mock.calls.map((c) => c[0])).toEqual(["frame"]);
+    expect(ui.inStep(a) && ui.inStep(b) && ui.inStep(always)).toBe(true);
+    ui.setSteps(["one", "two"]);
+    expect(seen.mock.calls.map((c) => c[0])).toEqual(["step"]);
     expect(ui.isVisible(a)).toBe(true);
     expect(ui.isVisible(b)).toBe(false);
     expect(ui.isVisible(always)).toBe(true);
-    ui.setFrame(1);
+    ui.setStep(1);
     expect(ui.isVisible(a)).toBe(false);
     expect(ui.isVisible(b)).toBe(true);
-    ui.stepFrame(5); // clamped
-    expect(ui.frameIndex).toBe(1);
-    ui.setFrame(0);
-    expect(ui.frameIndex).toBe(0);
-    ui.setFrames(["one"]); // the shown frame survives when it still exists
-    expect(ui.frameIndex).toBe(0);
+    ui.moveStep(5); // clamped
+    expect(ui.stepIndex).toBe(1);
+    ui.setStep(0);
+    expect(ui.stepIndex).toBe(0);
+    ui.setSteps(["one"]); // the shown step survives when it still exists
+    expect(ui.stepIndex).toBe(0);
     expect(ui.isVisible({ ...a })).toBe(true);
   });
 });

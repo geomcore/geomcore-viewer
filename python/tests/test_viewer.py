@@ -197,49 +197,49 @@ def test_nan_geometry_is_rejected(server):
     assert view.objects == {} and _ids(server) == []
 
 
-def test_frames_hold_their_own_objects(server):
+def test_steps_hold_their_own_objects(server):
     view = make(server)
     view.add(Point3D(0, 0), label="fixed")
     for name in ("tilt 0°", "tilt 45°"):
-        with view.frame(name):
+        with view.step(name):
             view.add(Point3D(1, 0), label="cone")
             view.add(Point3D(2, 0), label="plane")
     scene = _scene(server)
-    assert scene["frames"] == ["tilt 0°", "tilt 45°"]
+    assert scene["steps"] == ["tilt 0°", "tilt 45°"]
     objects = scene["objects"]
-    assert [o["id"] for o in objects if "frame" not in o] == ["fixed"]
-    assert {o["frame"] for o in objects if "frame" in o} == {"tilt 0°", "tilt 45°"}
+    assert [o["id"] for o in objects if "step" not in o] == ["fixed"]
+    assert {o["step"] for o in objects if "step" in o} == {"tilt 0°", "tilt 45°"}
     cones = [o for o in objects if o["label"] == "cone"]
     assert len(cones) == 2 and len({o["id"] for o in cones}) == 2
-    assert all(o["id"].startswith(o["frame"] + "·") for o in cones)
+    assert all(o["id"].startswith(o["step"] + "·") for o in cones)
 
 
-def test_re_running_a_frame_replaces_only_that_frame(server):
+def test_re_running_a_step_replaces_only_that_step(server):
     view = make(server)
-    with view.frame("a"):
+    with view.step("a"):
         view.add(Point3D(0, 0), label="P")
-    with view.frame("b"):
+    with view.step("b"):
         view.add(Point3D(1, 0), label="P")
-    with view.frame("a"):
+    with view.step("a"):
         view.add(Point3D(2, 0), label="P")
     ps = [o for o in _scene(server)["objects"] if o["label"] == "P"]
-    assert sorted((o["frame"], o["geom"]["p"][0]) for o in ps) == [("a", 2.0), ("b", 1.0)]
+    assert sorted((o["step"], o["geom"]["p"][0]) for o in ps) == [("a", 2.0), ("b", 1.0)]
 
 
-def test_clear_forgets_the_frames(server):
+def test_clear_forgets_the_steps(server):
     view = make(server)
-    with view.frame("a"):
+    with view.step("a"):
         view.add(Point3D(0, 0), label="P")
     view.clear()
-    assert view.frames == [] and _scene(server)["frames"] == []
+    assert view.steps == [] and _scene(server)["steps"] == []
 
 
-def test_frames_are_on_the_saved_scene(tmp_path):
+def test_steps_are_on_the_saved_scene(tmp_path):
     view = gv.Viewer(spawn=False, open_browser=False)
-    with view.frame("one"):
+    with view.step("one"):
         view.add(Point3D(0, 0), label="P")
     saved = json.loads(view.save(tmp_path / "s.json").read_text())
-    assert saved["frames"] == ["one"] and saved["objects"][0]["frame"] == "one"
+    assert saved["steps"] == ["one"] and saved["objects"][0]["step"] == "one"
 
 
 def test_points_builds_one_cloud_object(server):
