@@ -28,9 +28,9 @@ export type SurfaceGeom =
 
 export type MarkerGeom =
   | { type: "polyline"; points: Vec3[] }
-  | { type: "mesh"; vertices: Vec3[]; indices: number[] }
+  | { type: "mesh"; vertices: Vec3[]; indices: number[]; values?: number[]; colormap?: string }
   | { type: "point"; p: Vec3 }
-  | { type: "points"; positions: Vec3[]; size?: number }
+  | { type: "points"; positions: Vec3[]; size?: number; values?: number[]; colormap?: string }
   | { type: "arrow"; at: Vec3; vec: Vec3 }
   | { type: "text"; at: Vec3; text: string }
   | { type: "note"; text: string; level?: "info" | "warn" };

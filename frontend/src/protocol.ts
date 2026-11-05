@@ -137,11 +137,31 @@ function parseGeom(g: Record<string, unknown>): Geom | string {
     const idx = geom.indices as number[];
     if (idx.length % 3 !== 0 || idx.some((i) => i >= n)) return "mesh.indices must be triangles indexing vertices";
   }
+  if ((type === "points" || type === "mesh") && (g.values !== undefined || g.colormap !== undefined)) {
+    const count = type === "points" ? (geom.positions as Vec3[]).length
+      : type === "mesh" ? (geom.vertices as Vec3[]).length : 0;
+    const problem = parseScalars(type, g, geom, count);
+    if (problem) return problem;
+  }
   if (SURFACE_TYPES.has(type) && g.window !== undefined && !validWindow(g.window)) {
     return `${type}.window must be {u?: [a, b], v?: [a, b]}`;
   }
   if (CURVE_TYPES.has(type) && g.range !== undefined && !isRange(g.range)) return `${type}.range must be [t0, t1]`;
   return geom as unknown as Geom;
+}
+
+/** `values` (one per point or vertex) and `colormap` for a scalar-coloured cloud or mesh. */
+function parseScalars(type: string, raw: Record<string, unknown>, geom: Record<string, unknown>,
+                      count: number): string | undefined {
+  if (raw.colormap !== undefined && typeof raw.colormap !== "string") return `${type}.colormap must be a string`;
+  if (raw.values === undefined) return `${type}.colormap needs values`;
+  if (!Array.isArray(raw.values) || !raw.values.every(finite)) return `${type}.values must be finite numbers`;
+  if (raw.values.length !== count) {
+    return `${type}.values needs one per ${type === "points" ? "point" : "vertex"} (${count})`;
+  }
+  geom.values = raw.values;
+  if (raw.colormap !== undefined) geom.colormap = raw.colormap;
+  return undefined;
 }
 
 /** An extrusion or revolution: its profile curve plus the sweep, and an optional window.

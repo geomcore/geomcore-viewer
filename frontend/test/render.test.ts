@@ -50,6 +50,13 @@ describe("buildDrawList", () => {
     expect(list.texts).toMatchObject([{ key: "p:P₁", text: "P₁ (1.841, 1.62)", kind: "point" }]);
   });
 
+  it("colours a point cloud's dots by its scalars", () => {
+    const cloud = obj("C", { type: "points", positions: [[0, 0, 0], [1, 0, 0]], values: [0, 1] });
+    const dots = buildDrawList([cloud], cam, opts()).dots;
+    expect(dots).toHaveLength(2);
+    expect(dots[0].color).not.toBe(dots[1].color);
+  });
+
   it("does not label a result operand, whose label stays in hover", () => {
     const operand = obj("P·first", { type: "point", p: [1, 0, 0] }, { meta: { operand: true } });
     const list = buildDrawList([operand], cam, opts());

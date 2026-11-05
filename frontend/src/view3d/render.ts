@@ -19,6 +19,7 @@ import type { Box, Vec3 } from "../geom/vec";
 import type { SceneObject } from "../protocol";
 import { colorOf } from "../ui/colors";
 import { fmtPoint } from "../ui/format";
+import { scalarColors, scalarRgba } from "../ui/colormap";
 import type { TextKind } from "../view2d/render";
 
 /** Spec §5.3: curves are 3 px wide whatever the zoom. */
@@ -55,12 +56,16 @@ export interface Surface3D {
   grid: SurfaceGrid | null;
   color: string;
   alpha: number;
+  /** Per-vertex RGBA, flat as Babylon's VertexData expects it, when the mesh carries scalars. */
+  colors?: number[];
 }
 
 export interface Markers3D {
   id: string;
   at: Vec3[];
   color: string;
+  /** One CSS colour per point when the cloud carries scalars; `color` is the fallback. */
+  colors?: string[];
   /** Radius in CSS pixels before presentation scaling and highlight. */
   px: number;
   alpha: number;
@@ -191,7 +196,8 @@ export function objectDraw3D(o: SceneObject, ctx: Context3D): ObjectDraw3D {
     if (labelsOn(o)) out.texts.push({ key: `s:${o.id}`, id: o.id, text: labelOf(o), at: mid, color: null, kind: "curve" });
   } else if (g.type === "mesh") {
     const mesh = { positions: g.vertices.flat(), indices: g.indices, uvs: [] };
-    out.surface = { id: o.id, mesh, grid: null, color, alpha: surfaceAlpha(o, ctx.withCurves) };
+    const colors = g.values ? scalarRgba(g.values, g.colormap) : undefined;
+    out.surface = { id: o.id, mesh, grid: null, color, alpha: surfaceAlpha(o, ctx.withCurves), colors };
   } else if (g.type === "polyline" || g.type === "arrow") {
     const lines = g.type === "polyline" ? [g.points] : arrowPolylines(g.at, g.vec);
     stroke(lines);
@@ -201,7 +207,8 @@ export function objectDraw3D(o: SceneObject, ctx: Context3D): ObjectDraw3D {
     out.pick.dots.push(g.p);
     if (labelsOn(o)) out.texts.push({ key: `p:${o.id}`, id: o.id, text: `${labelOf(o)} ${fmtPoint(g.p)}`, at: g.p, color: null, kind: "point" });
   } else if (g.type === "points") {
-    out.markers.push({ id: o.id, at: g.positions, color, px: g.size ?? 3, alpha, extra: false });
+    const colors = g.values ? scalarColors(g.values, g.colormap) : undefined;
+    out.markers.push({ id: o.id, at: g.positions, color, colors, px: g.size ?? 3, alpha, extra: false });
     out.pick.dots.push(...g.positions);
     if (g.positions.length && labelsOn(o)) out.texts.push({ key: `p:${o.id}`, id: o.id, text: labelOf(o), at: g.positions[0], color: null, kind: "point" });
   } else if (g.type === "text") {

@@ -186,6 +186,53 @@ def test_nan_geometry_is_rejected(server):
     assert view.objects == {} and _ids(server) == []
 
 
+def test_points_builds_one_cloud_object(server):
+    view = make(server)
+    view.points([(0, 0, 0), (1, 0, 0), (0, 1, 0)], values=[0, 0.5, 1], colormap="plasma", size=4, label="dev")
+    [obj] = _scene(server)["objects"]
+    assert obj["geom"] == {
+        "type": "points",
+        "positions": [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+        "size": 4.0,
+        "values": [0.0, 0.5, 1.0],
+        "colormap": "plasma",
+    }
+    assert obj["label"] == "dev"
+
+
+def test_mesh_takes_per_vertex_values(server):
+    view = make(server)
+    view.mesh([(0, 0, 0), (1, 0, 0), (0, 1, 0)], [0, 1, 2], values=[1, 2, 3], label="m")
+    [obj] = _scene(server)["objects"]
+    assert obj["geom"]["values"] == [1.0, 2.0, 3.0] and obj["geom"]["colormap"] == "viridis"
+
+
+def test_scalar_fields_need_one_finite_value_per_element(server):
+    view = make(server)
+    with pytest.raises(ValueError, match="one number per point"):
+        view.points([(0, 0), (1, 1)], values=[1])
+    with pytest.raises(ValueError, match="finite"):
+        view.points([(0, 0)], values=[float("nan")])
+    with pytest.raises(ValueError, match="one number per vertex"):
+        view.mesh([(0, 0), (1, 0), (0, 1)], [0, 1, 2], values=[1, 2])
+    with pytest.raises(ValueError, match="needs values"):
+        view.points([(0, 0)], colormap="viridis")
+    with pytest.raises(ValueError, match="needs values"):
+        view.mesh([(0, 0), (1, 0), (0, 1)], [0, 1, 2], colormap="viridis")
+
+
+def test_points_and_mesh_take_numpy_arrays(server):
+    np = pytest.importorskip("numpy")
+    view = make(server)
+    view.points(np.array([[0.0, 0.0], [1.0, 1.0]]), values=np.array([0.25, 0.75]), label="p")
+    view.mesh(np.array([[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]]), [0, 1, 2], values=np.array([1.0, 2.0, 3.0]), label="m")
+    geoms = {o["id"]: o["geom"] for o in _scene(server)["objects"]}
+    assert geoms["p"]["positions"] == [[0.0, 0.0, 0.0], [1.0, 1.0, 0.0]]
+    assert geoms["p"]["values"] == [0.25, 0.75]
+    assert geoms["m"]["values"] == [1.0, 2.0, 3.0]
+    json.dumps(_scene(server))  # every numpy scalar became a JSON number
+
+
 def test_escape_hatches_coerce_inputs(server):
     view = make(server)
     view.polyline(((0, 0), (1, 1)), label="pl")

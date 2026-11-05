@@ -59,6 +59,7 @@ pre-0.39 names (`Point3D`, `Circle3D`…), so older kernels keep working.
 | `handle.update(color=…)`, `handle.remove()` | change or remove one object |
 | `view.pcurve(curve, on=surface)` | any 2D curve — `Line2D`/`Circle2D` exactly (e.g. `cyl.curve_3d_to_uv(circle)`, or `circle.parametrize_on(cyl)` before 0.43), the rest sampled to a polyline — or `(u, v)` pairs drawn on a surface already added |
 | `view.polyline(pts)`, `view.mesh(v, i)`, `view.arrow(at, vec)`, `view.text(at, s)` | raw geometry; `polyline` takes a list of point lists, `arrow`/`text` zipped lists (a single `vec` or string repeats) |
+| `view.points(xyz, values=, colormap=, size=)`, `view.mesh(v, i, values=, colormap=)` | one point cloud / mesh, coloured per point or vertex by `values` (`viridis`, `plasma`, `turbo`, `coolwarm`, `gray`) |
 | `with view.batch(): …` | send everything added inside the block once, not one request per call |
 | `view.clear()`, `view.save(path)`, `view.open()` | housekeeping |
 | `gv.add(...)`, `gv.clear()` | same, on the most recent viewer (handy in `pdb`) |

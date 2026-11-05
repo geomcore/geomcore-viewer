@@ -71,6 +71,32 @@ describe("profile surfaces", () => {
   });
 });
 
+describe("scalar colouring", () => {
+  it("parses per-point and per-vertex values with a colormap", () => {
+    const cloud = parseObject({
+      id: "C",
+      geom: { type: "points", positions: [[0, 0], [1, 1]], values: [0, 1], colormap: "plasma", size: 4 },
+    });
+    expect("object" in cloud && cloud.object.geom).toMatchObject({ values: [0, 1], colormap: "plasma" });
+    const mesh = parseObject({
+      id: "M",
+      geom: { type: "mesh", vertices: [[0, 0], [1, 0], [0, 1]], indices: [0, 1, 2], values: [1, 2, 3] },
+    });
+    expect("object" in mesh && mesh.object.geom).toMatchObject({ values: [1, 2, 3] });
+  });
+
+  it.each([
+    [{ type: "points", positions: [[0, 0]], values: [] }, "points.values needs one per point (1)"],
+    [{ type: "points", positions: [[0, 0]], values: [1], colormap: 7 }, "points.colormap must be a string"],
+    [{ type: "points", positions: [[0, 0]], colormap: "viridis" }, "points.colormap needs values"],
+    [{ type: "points", positions: [[0, 0]], values: [NaN] }, "points.values must be finite numbers"],
+    [{ type: "points", positions: [[0, 0]], values: "1" }, "points.values must be finite numbers"],
+    [{ type: "mesh", vertices: [[0, 0], [1, 0], [0, 1]], indices: [0, 1, 2], values: [1, 2] }, "mesh.values needs one per vertex (3)"],
+  ])("rejects malformed scalars %j", (geom, message) => {
+    expect(parseObject({ id: "a", geom })).toEqual({ problem: { id: "a", message } });
+  });
+});
+
 describe("pcurve", () => {
   it("accepts a (u, v) line, circle or polyline and pads 2D vectors", () => {
     const line = parseObject({ id: "c", geom: { type: "pcurve", surface: "Y", curve: { type: "line", o: [0, 3], d: [1, 0], range: [0, 6] } } });

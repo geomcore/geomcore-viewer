@@ -128,6 +128,20 @@ describe("objectDraw3D", () => {
     expect(d.texts.filter((t) => t.kind === "extra")).toEqual([]); // pole/knot dots stay unlabelled
   });
 
+  it("colours a point cloud and a mesh by their scalars", () => {
+    const cloud = obj("C", { type: "points", positions: [[0, 0, 0], [1, 0, 0]], values: [0, 1], colormap: "turbo" });
+    const [marker] = objectDraw3D(cloud, ctx([cloud])).markers;
+    expect(marker.colors).toHaveLength(2);
+    expect(marker.colors![0]).not.toBe(marker.colors![1]);
+
+    const mesh = obj("M", {
+      type: "mesh", vertices: [[0, 0, 0], [1, 0, 0], [0, 1, 0]], indices: [0, 1, 2], values: [1, 2, 3],
+    });
+    const { surface } = objectDraw3D(mesh, ctx([mesh]));
+    expect(surface!.colors).toHaveLength(3 * 4); // RGBA per vertex
+    expect(surface!.colors!.filter((_, i) => i % 4 === 3)).toEqual([1, 1, 1]);
+  });
+
   it("does not label a result operand", () => {
     const operand = obj("P·second", { type: "sphere", frame: world, r: 1 }, { meta: { operand: true } });
     expect(objectDraw3D(operand, ctx([operand])).texts).toEqual([]);

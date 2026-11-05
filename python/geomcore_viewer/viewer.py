@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import urllib.error
 import urllib.request
 import uuid
@@ -24,6 +25,7 @@ EXTRA_KEYS = frozenset({
     "poles", "knots", "comb", "normals",
 })
 VIEWS = ("auto", "2d", "3d")
+DEFAULT_COLORMAP = "viridis"
 
 _default: Viewer | None = None
 
@@ -143,8 +145,31 @@ class Viewer:
         geoms = [{"type": "polyline", "points": [as_vec(p) for p in one]} for one in _polylines(points)]
         return self._commit(_labelled_geoms(geoms, label), label, group, options)
 
-    def mesh(self, vertices, indices, *, label: str | None = None, group: str | None = None, **options):
+    def mesh(self, vertices, indices, *, values=None, colormap: str | None = None,
+             label: str | None = None, group: str | None = None, **options):
+        """One mesh; ``values=`` (one per vertex, with a ``colormap``) colours it by scalar."""
         geom = {"type": "mesh", "vertices": [as_vec(p) for p in vertices], "indices": [int(i) for i in indices]}
+        if values is not None:
+            geom["values"] = _scalars(values, len(geom["vertices"]), "vertex")
+            geom["colormap"] = colormap or DEFAULT_COLORMAP
+        elif colormap is not None:
+            raise ValueError("mesh: colormap= needs values=")
+        return self._commit([{"label": label, "geom": geom}], label, group, options)
+
+    def points(self, xyz, *, values=None, colormap: str | None = None, size: float | None = None,
+               label: str | None = None, group: str | None = None, **options):
+        """A point cloud as one object (one panel row, one request). ``values=`` (one per point)
+        colours each point through ``colormap`` (default "viridis"; also "plasma", "turbo",
+        "coolwarm", "gray"); ``size=`` is its dot radius in pixels."""
+        positions = [as_vec(p) for p in xyz]
+        geom = {"type": "points", "positions": positions}
+        if size is not None:
+            geom["size"] = float(size)
+        if values is not None:
+            geom["values"] = _scalars(values, len(positions), "point")
+            geom["colormap"] = colormap or DEFAULT_COLORMAP
+        elif colormap is not None:
+            raise ValueError("points: colormap= needs values=")
         return self._commit([{"label": label, "geom": geom}], label, group, options)
 
     def arrow(self, at, vec, *, label: str | None = None, group: str | None = None, **options):
@@ -407,6 +432,16 @@ def _paired(left, right):
     if len(a) != len(b):
         raise TypeError(f"expected the same number of items, got {len(a)} and {len(b)}")
     return zip(a, b)
+
+
+def _scalars(values, count: int, unit: str) -> list[float]:
+    """A scalar field as JSON numbers: one finite number per point or vertex."""
+    out = [float(v) for v in values]
+    if len(out) != count:
+        raise ValueError(f"values needs one number per {unit} ({count}), got {len(out)}")
+    if any(not math.isfinite(v) for v in out):
+        raise ValueError("values must be finite")
+    return out
 
 
 def _labelled_geoms(geoms: list[dict], label: str | None) -> list[dict]:
