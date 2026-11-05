@@ -114,10 +114,9 @@ class Viewer:
         for i, obj in enumerate(objs, start=1):
             part_label = label if len(objs) == 1 or label is None else indexed(label, i)
             object_parts = to_objects(obj, part_label, u=u, v=v)
-            data = extra_data(obj, options, u, v)
-            if data:
-                for part in object_parts:
-                    part["data"] = data
+            if len(object_parts) == 1:
+                # Poles, knots, combs and normals come from the exact object, once its window is known.
+                object_parts[0]["exact_object"] = obj
             parts += object_parts
         return self._commit(parts, label, group, options, u, v)
 
@@ -192,8 +191,12 @@ class Viewer:
             color = previous.get("color") or part_style.get("color") or self._color()
             applied = {k: x for k, x in style.items() if k not in part.get("keeps_style", ())}
             obj["style"] = {**part_style, "color": color, **applied}
-        if extras or part.get("data"):
-            obj["extras"] = {**extras, **(part.get("data") or {})}
+        computed = {}
+        if part.get("exact_object") is not None:
+            window = geom.get("window") or {}
+            computed = extra_data(part["exact_object"], extras, window.get("u", u), window.get("v", v))
+        if extras or computed:
+            obj["extras"] = {**extras, **computed}
         if part.get("meta"):
             obj["meta"] = part["meta"]
         _check_serializable(obj)

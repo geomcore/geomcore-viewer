@@ -368,8 +368,20 @@ def test_teaching_extras_are_absent_unless_asked_for_and_do_not_apply():
     assert extra_data(sphere, {"poles": True, "knots": True, "comb": 1.0}) == {}
 
 
+def _with_unit_normal(surface, geom):
+    """Give a fake surface the kernel's ``normal(u, v)``, by central differences on ``geom``."""
+    def normal(self, u, v, h=1e-6):
+        du = [a - b for a, b in zip(eval_surface(geom, u + h, v), eval_surface(geom, u - h, v))]
+        dv = [a - b for a, b in zip(eval_surface(geom, u, v + h), eval_surface(geom, u, v - h))]
+        n = [du[1] * dv[2] - du[2] * dv[1], du[2] * dv[0] - du[0] * dv[2], du[0] * dv[1] - du[1] * dv[0]]
+        return Point3D(*[c / math.hypot(*n) for c in n])
+    type(surface).normal = normal
+    return surface
+
+
 def test_surface_normals_are_sampled_over_the_surface_window():
-    sphere = fake("Sphere", {"type": "sphere", "frame": FLAT, "r": 1.0}, center=Point3D(0, 0, 0), radius=1.0)
+    geom = {"type": "sphere", "frame": FLAT, "r": 1.0}
+    sphere = _with_unit_normal(fake("Sphere", geom, center=Point3D(0, 0, 0), radius=1.0), geom)
     normals = extra_data(sphere, {"normals": 2})["normals"]
     assert len(normals) == 4
     for base, tip in normals:
@@ -377,15 +389,41 @@ def test_surface_normals_are_sampled_over_the_surface_window():
         assert math.hypot(*[tip[i] - base[i] for i in range(3)]) > 0.0
 
 
-def test_add_attaches_the_computed_extras_to_the_object():
+def _bare_viewer():
     from geomcore_viewer.viewer import Viewer
 
     viewer = Viewer.__new__(Viewer)
     viewer._next_color, viewer._next_auto, viewer.run, viewer.objects = 0, 0, "abcdef", {}
-    built = viewer._build({"label": "B", "geom": {"type": "point", "p": [0.0, 0.0, 0.0]},
-                           "data": {"poles": [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]]}},
-                          {}, None, {"poles": True}, None, None)
+    return viewer
+
+
+def test_add_attaches_the_computed_extras_to_the_object():
+    curve = fake("BSplineCurve3D", {"type": "line", "o": [0, 0, 0], "d": [1, 0, 0]},
+                 bounds=(0.0, 1.0), poles=[Point3D(0, 0, 0), Point3D(1, 0, 0)])
+    built = _bare_viewer()._build({"label": "B", "geom": {"type": "polyline", "points": [[0, 0, 0], [1, 0, 0]]},
+                                   "exact_object": curve}, {}, None, {"poles": True}, None, None)
     assert built["extras"] == {"poles": [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]]}
+
+
+def test_normals_cover_the_window_drawn_on_an_unbounded_surface():
+    geom = {"type": "plane", "frame": FLAT}
+    plane = _with_unit_normal(fake("Plane", geom), geom)
+    built = _bare_viewer()._build({"label": "P", "geom": geom, "exact_object": plane}, {}, None, {"normals": 3}, None, None)
+    assert built["geom"]["window"] == {"u": [-5.0, 5.0], "v": [-5.0, 5.0]}  # an empty scene's extent
+    bases = [base for base, _ in built["extras"]["normals"]]
+    assert max(abs(c) for base in bases for c in base[:2]) == pytest.approx(10.0 / 3.0)  # cell centres of ±5
+
+
+def test_real_geomcore_2d_comb_points_to_the_centre_whichever_way_the_arc_turns():
+    gc = real_geomcore()
+    if not hasattr(gc, "BSplineCurve2D"):
+        pytest.skip("needs geomcore 2D B-splines")
+    P = gc.Point2D
+    for points in ([P(1, 0), P(0, 1), P(-1, 0)], [P(-1, 0), P(0, 1), P(1, 0)]):  # counterclockwise, clockwise
+        arc = gc.BSplineCurve2D.interpolate(points, 2)
+        teeth = extra_data(arc, {"comb": 0.5})["comb"]["teeth"]
+        base, tip = teeth[len(teeth) // 2]
+        assert tip[1] < base[1]  # at the top of the arc the tooth points down, towards the centre
 
 
 def test_windows_and_extent():

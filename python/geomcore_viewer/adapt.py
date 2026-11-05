@@ -385,7 +385,9 @@ def _curvature_comb(obj, scale: float) -> dict:
         normal = _sub(second, _mul(tangent, _dot(second, tangent)))
         if _dot(normal, normal) == 0.0:
             continue
-        tip = _add(p, _mul(_unit(normal), scale * float(obj.curvature(t))))
+        # The principal normal already points to the centre of curvature; a 2D curve's curvature
+        # is signed (negative turning clockwise), so only its size scales the tooth.
+        tip = _add(p, _mul(_unit(normal), scale * abs(float(obj.curvature(t)))))
         teeth.append([p, tip])
     return {"scale": scale, "teeth": teeth}
 
@@ -403,24 +405,17 @@ def _surface_domain(obj, u, v) -> tuple[tuple, tuple]:
 
 
 def _normals(obj, count: int, u, v) -> list:
-    """`count × count` normal segments over the surface's window, each as long as 8 % of the
-    sampled patch's diagonal."""
+    """`count × count` normal segments, from the kernel's ``normal(u, v)`` at the cell centres of
+    the drawn window, each as long as 8 % of the sampled patch's diagonal."""
     count = max(1, min(int(count), 32))
     (u0, u1), (v0, v1) = _surface_domain(obj, u, v)
-    hu = (u1 - u0) / 1000.0 or 1e-6
-    hv = (v1 - v0) / 1000.0 or 1e-6
     bases, normals = [], []
     for i in range(count):
         for j in range(count):
-            uu = u0 + (u1 - u0) * (i + 0.5) / count
-            vv = v0 + (v1 - v0) * (j + 0.5) / count
-            du = _sub(as_vec(obj.eval_point(uu + hu, vv)), as_vec(obj.eval_point(uu - hu, vv)))
-            dv = _sub(as_vec(obj.eval_point(uu, vv + hv)), as_vec(obj.eval_point(uu, vv - hv)))
-            normal = _cross(du, dv)
-            if _dot(normal, normal) == 0.0:
-                continue
-            bases.append(as_vec(obj.eval_point(uu, vv)))
-            normals.append(_unit(normal))
+            u_at = u0 + (u1 - u0) * (i + 0.5) / count
+            v_at = v0 + (v1 - v0) * (j + 0.5) / count
+            bases.append(as_vec(obj.eval_point(u_at, v_at)))
+            normals.append(as_vec(obj.normal(u_at, v_at)))
     if not bases:
         return []
     low = [min(p[k] for p in bases) for k in range(3)]
