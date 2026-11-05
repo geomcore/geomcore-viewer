@@ -9,6 +9,7 @@ import type { Vec2, Vec3 } from "../geom/vec";
 import type { SceneObject } from "../protocol";
 import { colorOf } from "../ui/colors";
 import { fmtNum, fmtParams, fmtPoint } from "../ui/format";
+import { scalarColors } from "../ui/colormap";
 import { Palette, mixHex } from "../ui/theme";
 import { Camera2D, screenToWorld, visibleRect, worldToScreen } from "./camera";
 import type { Hit, Pickable } from "./pick";
@@ -159,10 +160,11 @@ export function buildDrawList(objects: Iterable<SceneObject>, cam: Camera2D, opt
       if (labelsOn(o)) out.texts.push({ key: `p:${o.id}`, id: o.id, text: `${labelOf(o)} ${fmtPoint(g.p)}`, at, color: opts.palette.text, kind: "point" });
     } else if (g.type === "points") {
       const radius = (g.size ?? 3) * ws + lit;
+      const scalars = g.values ? scalarColors(g.values, g.colormap) : null;
       g.positions.forEach((p, index) => {
         if (!insideRect(clip, p)) return;
         const at = screen(p);
-        out.dots.push({ id: o.id, at, color, radius, alpha, hollow: false });
+        out.dots.push({ id: o.id, at, color: scalars?.[index] ?? color, radius, alpha, hollow: false });
         pick.dots.push({ at, index });
       });
       const first = g.positions[0];

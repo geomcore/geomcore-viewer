@@ -526,9 +526,11 @@ export class View3D {
       if (s.mesh.uvs.length) data.uvs = s.mesh.uvs;
       data.normals = [];
       BABYLON.VertexData.ComputeNormals(s.mesh.positions, s.mesh.indices, data.normals);
+      if (s.colors) data.colors = s.colors;
       data.applyToMesh(mesh);
+      mesh.useVertexColors = s.colors !== undefined;
       const mat = new BABYLON.StandardMaterial(`m-${o.id}`, this.scene);
-      mat.diffuseColor = color3(s.color);
+      mat.diffuseColor = s.colors ? new BABYLON.Color3(1, 1, 1) : color3(s.color);
       mat.specularColor = new BABYLON.Color3(0.2, 0.2, 0.2);
       mat.backFaceCulling = false;
       mat.twoSidedLighting = true;
@@ -581,8 +583,9 @@ export class View3D {
     const mesh = BABYLON.MeshBuilder.CreateSphere(name, { diameter: 1, segments: 8 }, this.scene);
     const mat = new BABYLON.StandardMaterial(`${name}-m`, this.scene);
     const color = color3(part.extra ? mixHex(part.color, this.palette.bg, EXTRA_MIX) : part.color);
-    mat.diffuseColor = color;
-    mat.emissiveColor = color.scale(0.6);
+    // A scalar-coloured cloud tints every instance: white diffuse lets the instance colours through.
+    mat.diffuseColor = part.colors ? new BABYLON.Color3(1, 1, 1) : color;
+    mat.emissiveColor = part.colors ? color3("#000000") : color.scale(0.6);
     mat.alpha = part.alpha;
     mesh.material = mat;
     mesh.isPickable = false;
@@ -590,6 +593,14 @@ export class View3D {
     const matrices = new Float32Array(16 * part.at.length);
     part.at.forEach((p, i) => BABYLON.Matrix.Translation(p[0], p[1], p[2]).copyToArray(matrices, 16 * i));
     mesh.thinInstanceSetBuffer("matrix", matrices, 16, false);
+    if (part.colors?.length === part.at.length) {
+      const colors = new Float32Array(4 * part.at.length);
+      part.colors.forEach((hex, i) => {
+        const c = color3(hex);
+        colors.set([c.r, c.g, c.b, 1], 4 * i);
+      });
+      mesh.thinInstanceSetBuffer("color", colors, 4, false);
+    }
     return { mesh, part, matrices };
   }
 

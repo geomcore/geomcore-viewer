@@ -60,9 +60,9 @@ unit axes `o, x, y, z` (right-handed, orthonormal).
 | `torus` | `frame`, `R`, `r` | `ρ = R + r cos v`; `o + ρ cos u·x + ρ sin u·y + r sin v·z` |
 | `extrusion` | `profile`, `direction` | `profile(u) + v·direction` |
 | `revolution` | `profile`, `origin`, `direction` | `profile(v)` rotated about the axis (`origin`, `direction`) by `u` (Rodrigues); u is the angle |
-| `mesh` | `vertices`, `indices` | triangles; `indices.length % 3 == 0` |
+| `mesh` | `vertices`, `indices`, `values?`, `colormap?` | triangles; `indices.length % 3 == 0` |
 | `point` | `p` | — |
-| `points` | `positions`, `size?` | point cloud |
+| `points` | `positions`, `size?`, `values?`, `colormap?` | point cloud |
 | `arrow` | `at`, `vec` | — |
 | `text` | `at`, `text` | — |
 | `note` | `text`, `level?` (`info` / `warn`) | panel only, e.g. `P: ∅ (parallel)` |
@@ -78,6 +78,15 @@ sampled B-spline or Bézier profile keeps the kernel's parametrization.
 Without `range` its parameter is the point index (segment `i` spans
 `t ∈ [i, i + 1]`, as in a `pcurve`). A revolution's `direction` is the axis
 direction and must be non-zero.
+
+### Scalar colouring
+
+`points` and `mesh` may carry `values`: one finite number per point (or per
+vertex, for a mesh), the same length as `positions` / `vertices`, with a
+`colormap` name. The viewer normalizes the values over the object's own
+minimum…maximum (a constant field sits in the middle) and colours each dot or
+vertex. Maps: `viridis` (the default), `plasma`, `turbo`, `coolwarm`, `gray`;
+an unknown name falls back to viridis. `colormap` without `values` is rejected.
 
 Radii (`r`, `a`, `b`, `R`) must be positive and `f` non-zero.
 
