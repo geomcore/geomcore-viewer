@@ -9,6 +9,8 @@ const upright = (z: Vec3) => Math.abs(z[0]) < EPS && Math.abs(z[1]) < EPS;
 export function inPlaneZ0(g: Geom): boolean {
   switch (g.type) {
     case "point": return flat(g.p);
+    case "box": return flat(g.min) && flat(g.max);
+    case "bspline_curve": return g.poles.every(flat);
     case "points": return g.positions.every(flat);
     case "polyline": return g.points.every(flat);
     case "line": return flat(g.o) && flat(g.d);

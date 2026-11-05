@@ -55,10 +55,10 @@ pre-0.39 names (`Point3D`, `Circle3D`…), so older kernels keep working.
 | Call | Does |
 |---|---|
 | `gv.Viewer(title, view="auto"\|"2d"\|"3d", keep=False)` | a scene (new run) |
-| `view.add(*objs, label=, group=, color=, width=, dashed=, opacity=, u=, v=, foci=, asymptotes=, poles=, knots=, comb=, normals=, …)` | show objects → `Handle` / list |
+| `view.add(*objs, label=, group=, color=, width=, dashed=, opacity=, u=, v=, resolution=, foci=, asymptotes=, poles=, knots=, comb=, normals=, hidden=, silhouette=, …)` | show objects → `Handle` / list |
 | `handle.update(color=…)`, `handle.remove()` | change or remove one object |
-| `view.pcurve(curve, on=surface)` | any 2D curve — `Line2D`/`Circle2D` exactly (e.g. `cyl.curve_3d_to_uv(circle)`, or `circle.parametrize_on(cyl)` before 0.43), the rest sampled to a polyline — or `(u, v)` pairs drawn on a surface already added |
-| `view.polyline(pts)`, `view.mesh(v, i)`, `view.arrow(at, vec)`, `view.text(at, s)` | raw geometry; `polyline` takes a list of point lists, `arrow`/`text` zipped lists (a single `vec` or string repeats) |
+| `view.pcurve(curve, on=surface)` | any 2D curve — `Line2D`/`Circle2D`, or a `TrimmedCurve2D` of one, exactly (e.g. `cyl.curve_3d_to_uv(circle)`, or `circle.parametrize_on(cyl)` before 0.43), the rest sampled to a polyline — or `(u, v)` pairs drawn on an exact surface already added (a baked `mesh` has no `(u, v)` parameters) |
+| `view.polyline(pts)`, `view.mesh(v, i)`, `view.box(min, max)`, `view.arrow(at, vec)`, `view.text(at, s)` | raw geometry; `polyline` takes a list of point lists, `arrow`/`text` zipped lists (a single `vec` or string repeats) |
 | `view.points(xyz, values=, colormap=, size=)`, `view.mesh(v, i, values=, colormap=)` | one point cloud / mesh, coloured per point or vertex by `values` (`viridis`, `plasma`, `turbo`, `coolwarm`, `gray`) |
 | `with view.step("tilt 45°"): …` | a lesson step: the page shows one step at a time (slider and ←/→), so each parameter value keeps its own objects |
 | `with view.batch(): …` | send everything added inside the block once, not one request per call |
@@ -67,9 +67,19 @@ pre-0.39 names (`Point3D`, `Circle3D`…), so older kernels keep working.
 | `geomcore-viewer serve` / `geomcore-viewer stop` | run / stop the server by hand |
 
 `add` takes the elementary curves and surfaces, the 2D conics (drawn in
-z = 0), B-spline and Bézier curves and surfaces (sampled over their parameter
-bounds), trimmed curves, extrusions and revolutions (sent exactly as their
-profile plus the sweep), points, and lists of those.
+z = 0), trimmed curves (segments, arcs and conic pieces stay exact via
+`range`), extrusions and revolutions (sent exactly as their profile plus the
+sweep), bounding boxes (drawn as their twelve edges), and B-spline and Bézier
+curves and surfaces — sent exact (degree, poles, weights, knots,
+multiplicities; a Bézier through `to_bspline()`) and evaluated in the page, so
+trimmed B-spline pieces keep their `range` and the display refines with the
+zoom. It also takes points, intersection results and lists of those.
+
+Surfaces take `isolines=`, `wire=`, `hidden="dashed"` (lines behind the
+surface drawn dashed and faint, as in a textbook figure) and `silhouette=True`
+(the outline from the camera). geomcore's iso curves (`S.u_iso(u)`,
+`S.v_iso(v)`) are ordinary exact curves; one that collapses to a point (a
+pole, an apex) arrives as a point.
 
 Default windows for infinite surfaces (planes, cylinders, cones) are computed
 from the objects already added, so add the finite objects first or pass `u=`
@@ -191,7 +201,7 @@ go straight to `add`. Rust never starts the server: run
 | `python/geomcore_viewer/` | client (`viewer.py`), geomcore adapter (`adapt.py`), server (`server.py`, `spawn.py`) |
 | `frontend/` | Vite + TypeScript viewer (Babylon.js 3D, PixiJS 2D); `src/geom/` is the evaluator core, `src/view2d/` the plane view, `src/view3d/` the 3D view, `src/viewuv/` the (u,v) pane |
 | `clients/rust/` | Rust client: `Viewer`, `Geom`, geomcore conversions behind the `geomcore` feature ([README](clients/rust/README.md)) |
-| `examples/` | `conics_2d.py`, `quadrics_3d.py`, `pcurve.py` (each takes `--save <file>`); Rust: `clients/rust/examples/` |
+| `examples/` | `conics_2d.py`, `quadrics_3d.py`, `pcurve.py`, `bspline.py` (each takes `--save <file>`); Rust: `clients/rust/examples/` |
 
 ## Development
 

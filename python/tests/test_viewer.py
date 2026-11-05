@@ -186,6 +186,8 @@ def test_extras_are_validated(server):
     view = make(server)
     view.add(Point3D(0, 0), label="a", foci=True)
     assert _scene(server)["objects"][0]["extras"] == {"foci": True}
+    view.add(Plane(), label="pl", u=(0, 1), v=(0, 1), wire=True, hidden="dashed", silhouette=True)
+    assert _scene(server)["objects"][1]["extras"] == {"wire": True, "hidden": "dashed", "silhouette": True}
     with pytest.raises(TypeError, match="colour"):
         view.add(Point3D(0, 0), colour="red")
 
@@ -661,6 +663,80 @@ def test_pcurve_needs_a_surface_in_the_scene(server):
     assert _ids(server) == ["A"]
 
 
+class BSplineSurface:
+    """Duck-typed stand-in named like the geomcore class (adapt dispatches on class name)."""
+    def eval_point(self, u, v):
+        return Point3D(u, v, u * v)
+
+    def u_degree(self):
+        return 1
+
+    def v_degree(self):
+        return 1
+
+    def u_pole_count(self):
+        return 2
+
+    def v_pole_count(self):
+        return 2
+
+    def poles(self):
+        return [[Point3D(0, 0, 0), Point3D(0, 1, 0)], [Point3D(1, 0, 0), Point3D(1, 1, 1)]]
+
+    def weights(self):
+        return None
+
+    def u_knots(self):
+        return [0.0, 1.0]
+
+    def u_multiplicities(self):
+        return [2, 2]
+
+    def v_knots(self):
+        return [0.0, 1.0]
+
+    def v_multiplicities(self):
+        return [2, 2]
+
+    def is_u_periodic(self):
+        return False
+
+    def is_v_periodic(self):
+        return False
+
+
+def test_pcurve_on_a_bspline_surface(server):
+    view = make(server)
+    surface = view.add(BSplineSurface(), label="S")
+    handle = view.pcurve([(0, 0), (1, 1)], on=surface, label="diag")
+    objects = {o["id"]: o for o in _scene(server)["objects"]}
+    assert handle.id == "diag"
+    assert objects["S"]["geom"]["type"] == "bspline_surface"
+    assert objects["diag"]["geom"] == {
+        "type": "pcurve", "surface": "S",
+        "curve": {"type": "polyline", "points": [[0.0, 0.0, 0.0], [1.0, 1.0, 0.0]]},
+    }
+
+
+def test_pcurve_still_refuses_a_mesh(server):
+    view = make(server)
+    view.mesh([(0, 0, 0), (1, 0, 0), (0, 1, 0)], [0, 1, 2], label="M")
+    with pytest.raises(ValueError, match="'M' is not a surface"):
+        view.pcurve([(0, 0), (1, 1)], on="M")
+
+
+def test_box_helper_sends_min_and_max(server):
+    view = make(server)
+    handle = view.box((0, 0, 0), (1, 2, 3), label="B")
+    assert handle.id == "B"
+    [obj] = _scene(server)["objects"]
+    assert obj["geom"] == {"type": "box", "min": [0.0, 0.0, 0.0], "max": [1.0, 2.0, 3.0]}
+    assert obj["style"]["color"] == PALETTE[0]
+    box = view.add(Point3D(9, 9, 9), label="P")
+    assert _ids(server) == ["B", "P"]
+    box_handle = view.box((0, 0, 0), (1, 1, 1))  # unlabelled: fresh id, palette advances
+    assert box_handle.id != "B"
+    assert _scene(server)["objects"][-1]["style"]["color"] == PALETTE[2]
 def test_u_window_narrows_a_revolution_whose_profile_is_bounded(server):
     """The revolution's bounded profile already sets a v window; u= must still apply."""
     geomcore = pytest.importorskip("geomcore")

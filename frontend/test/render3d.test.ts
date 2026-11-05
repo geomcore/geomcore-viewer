@@ -6,13 +6,21 @@ import type { Frame } from "../src/geom/vec";
 import type { SceneObject } from "../src/protocol";
 import {
   Context3D,
+  EDGE_PX,
+  HIDDEN_ALPHA,
+  HIDDEN_PX,
   ISOLINES,
+  SILHOUETTE_PX,
   SURFACE_ALPHA_WITH_CURVES,
   WIRE_ISOLINES,
   hasCurves,
+  hiddenMode,
+  hiddenTwin,
   isolineCounts,
   objectDraw3D,
+  sceneOccludes,
   screenPx,
+  silhouetteLines,
   surfaceAlpha,
 } from "../src/view3d/render";
 
@@ -80,6 +88,68 @@ describe("isolines and wire", () => {
   });
 });
 
+describe("hidden lines and silhouettes", () => {
+  const torus = obj("T", { type: "torus", frame: world, R: 3, r: 1 });
+
+  it("reads the hidden mode, ignoring anything else", () => {
+    expect(hiddenMode(undefined)).toBeNull();
+    expect(hiddenMode({ hidden: "dashed" })).toBe("dashed");
+    expect(hiddenMode({ hidden: "hide" })).toBe("hide");
+    expect(hiddenMode({ hidden: "other" })).toBeNull();
+    expect(hiddenMode({ hidden: true })).toBeNull();
+  });
+
+  it("gives a hidden surface an occluder: its own tessellation, never drawn", () => {
+    const d = objectDraw3D({ ...cylinder, extras: { hidden: "dashed" } }, ctx([cylinder]));
+    expect(d.occluder?.mode).toBe("dashed");
+    expect(d.occluder?.mesh).toEqual(d.surface?.mesh);
+    const wire = objectDraw3D({ ...torus, extras: { wire: true, hidden: "hide" } }, ctx([torus]));
+    expect(wire.surface).toBeNull();
+    expect(wire.occluder?.mode).toBe("hide");
+    expect(wire.occluder!.mesh.indices.length).toBeGreaterThan(0);
+  });
+
+  it("adds nothing without the extras, for an unknown mode, or on a mesh", () => {
+    expect(objectDraw3D(cylinder, ctx([cylinder])).occluder).toBeNull();
+    expect(objectDraw3D(cylinder, ctx([cylinder])).silhouette).toBeNull();
+    expect(objectDraw3D({ ...cylinder, extras: { hidden: "other", silhouette: 1 } }, ctx([cylinder])).occluder).toBeNull();
+    expect(objectDraw3D({ ...cylinder, extras: { silhouette: "yes" } }, ctx([cylinder])).silhouette).toBeNull();
+    const mesh = obj("M", { type: "mesh", vertices: [[0, 0, 0], [1, 0, 0], [0, 1, 0]], indices: [0, 1, 2] }, { extras: { hidden: "dashed", silhouette: true } });
+    const d = objectDraw3D(mesh, ctx([mesh]));
+    expect(d.occluder).toBeNull();
+    expect(d.silhouette).toBeNull();
+  });
+
+  it("knows when a scene occludes", () => {
+    expect(sceneOccludes([cylinder, circle])).toBe(false);
+    expect(sceneOccludes([{ ...cylinder, extras: { hidden: "hide" } }])).toBe(true);
+    expect(sceneOccludes([{ ...circle, extras: { hidden: "dashed" } }])).toBe(false); // curves don't occlude
+  });
+
+  it("twins a line with its dashed, thinner, fainter hidden part", () => {
+    const solid = objectDraw3D(circle, ctx([circle])).lines[0];
+    expect(solid.dashed).toBe(false);
+    const twin = hiddenTwin(solid, ctx([circle]).box);
+    expect(twin.paths.length).toBeGreaterThan(20);
+    expect(twin.px).toBeCloseTo(solid.px * HIDDEN_PX, 12);
+    expect(twin.alpha).toBeCloseTo(solid.alpha * HIDDEN_ALPHA, 12);
+    const dashed = objectDraw3D({ ...circle, style: { dashed: true } }, ctx([circle])).lines[0];
+    expect(dashed.dashed).toBe(true);
+    expect(hiddenTwin(dashed, ctx([circle]).box).paths).toEqual(dashed.paths); // already cut
+  });
+
+  it("contours a silhouette in the surface's colour, a little heavier than its isolines", () => {
+    const sphere = obj("S", { type: "sphere", frame: world, r: 2 }, { style: { color: "#123456" }, extras: { silhouette: true } });
+    const d = objectDraw3D(sphere, ctx([sphere]));
+    expect(d.silhouette).not.toBeNull();
+    const part = silhouetteLines(d.silhouette!, { eye: [10, 0, 0], forward: [-1, 0, 0], ortho: false }, ctx([sphere]).box)!;
+    expect(part.color).toBe("#123456");
+    expect(part.px).toBe(EDGE_PX * SILHOUETTE_PX);
+    expect(part.paths).toHaveLength(1);
+    for (const p of part.paths[0]) expect(p[0]).toBeCloseTo(0.4, 5);
+  });
+});
+
 describe("objectDraw3D", () => {
   it("draws a curve inside the view box with its parameters for picking, labelled 30 % along", () => {
     const d = objectDraw3D(circle, ctx([circle]));
@@ -93,6 +163,41 @@ describe("objectDraw3D", () => {
     const d = objectDraw3D({ ...circle, style: { dashed: true } }, ctx([circle]));
     expect(d.lines[0].paths.length).toBeGreaterThan(20);
     expect(d.pick.polylines).toHaveLength(1); // hover still follows the whole curve
+  });
+
+  it("draws a box as its twelve edges, pickable", () => {
+    const box = obj("B", { type: "box", min: [0, 0, 0], max: [1, 2, 3] });
+    const d = objectDraw3D(box, ctx([box]));
+    expect(d.surface).toBeNull();
+    expect(d.lines).toHaveLength(1);
+    expect(d.lines[0].paths).toHaveLength(12);
+    expect(d.pick.polylines).toHaveLength(12);
+    expect(d.pick.polylines.every((p) => p.ts === null)).toBe(true);
+  });
+
+  it("draws an exact B-spline surface and lifts a pcurve onto it", () => {
+    const patch = obj("S", { type: "bspline_surface", u_degree: 1, v_degree: 1, nu: 2, nv: 2,
+      poles: [[0, 0, 0], [0, 1, 0], [1, 0, 0], [1, 1, 1]],
+      u_knots: [0, 1], u_multiplicities: [2, 2], v_knots: [0, 1], v_multiplicities: [2, 2],
+      u_periodic: false, v_periodic: false });
+    const d = objectDraw3D(patch, ctx([patch]));
+    expect(d.surface).not.toBeNull();
+    expect(d.surface!.mesh.positions.length).toBeGreaterThan(0);
+    // The corner (1, 1) evaluates to the last pole.
+    const n = d.surface!.mesh.positions.length;
+    expect(d.surface!.mesh.positions.slice(n - 3)).toEqual([1, 1, 1]);
+    const curve = obj("C", { type: "bspline_curve", degree: 1, poles: [[0, 0, 0], [2, 0, 0]],
+      knots: [0, 1], multiplicities: [2, 2], periodic: false });
+    const c = objectDraw3D(curve, ctx([curve]));
+    expect(c.lines[0].paths[0][0]).toEqual([0, 0, 0]);
+    const diag = obj("diag", { type: "pcurve", surface: "S",
+      curve: { type: "line", o: [0, 0, 0], d: [1, 1, 0] } });
+    const lifted = objectDraw3D(diag, ctx([patch, diag]));
+    expect(lifted.lines[0].paths[0][0]).toEqual([0, 0, 0]);
+    const last = lifted.lines[0].paths[0].at(-1)!;
+    expect(last[0]).toBeCloseTo(1, 9);
+    expect(last[1]).toBeCloseTo(1, 9);
+    expect(last[2]).toBeCloseTo(1, 9);
   });
 
   it("lifts a pcurve onto its surface, and draws nothing while the surface is missing", () => {

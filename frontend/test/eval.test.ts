@@ -107,4 +107,13 @@ describe("surfaceWindow", () => {
     expect(surfaceWindow({ type: "plane", frame: world }, 5)).toEqual({ u: [-5, 5], v: [-5, 5], assumed: true });
     expect(surfaceWindow({ type: "cylinder", frame: world, r: 1, window: { v: [0, 2] } }, 5)).toEqual({ u: [0, 2 * Math.PI], v: [0, 2], assumed: false });
   });
+
+  it("defaults a B-spline patch to its knot domain, never assumed", () => {
+    const patch = { type: "bspline_surface", u_degree: 1, v_degree: 1, nu: 2, nv: 2,
+      poles: [[0, 0, 0], [0, 1, 0], [1, 0, 0], [1, 1, 1]],
+      u_knots: [0, 1], u_multiplicities: [2, 2], v_knots: [0, 1], v_multiplicities: [2, 2],
+      u_periodic: false, v_periodic: false } as const;
+    expect(surfaceWindow(patch, 5)).toEqual({ u: [0, 1], v: [0, 1], assumed: false });
+    expect(surfaceWindow({ ...patch, window: { u: [0, 0.5] } }, 5)).toEqual({ u: [0, 0.5], v: [0, 1], assumed: false });
+  });
 });

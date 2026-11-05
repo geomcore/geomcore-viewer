@@ -13,12 +13,37 @@ import { PALETTES, Palette, mixHex } from "../ui/theme";
 import { placeLabels } from "../view2d/placement";
 import type { HoverLink, UvHover } from "../viewuv/link";
 import { EXTRA_MIX, TextKind } from "../view2d/render";
-import { SNAPS, Snap, cameraScale, fitRadius, orthoExtents, pixelSize } from "./camera";
+import { SNAPS, Snap, cameraScale, fitRadius, initWheelZoom, orthoExtents, pixelSize } from "./camera";
 import { Hit3D, Project, describeHit3D, pickProjected, surfaceUv } from "./pick";
-import { Lines3D, Markers3D, ObjectDraw3D, POINT_PX, Text3D, hasCurves, objectDraw3D, screenPx } from "./render";
+import type { Viewpoint } from "../geom/silhouette";
+import type { TriMesh } from "../geom/tessellate";
+import {
+  Lines3D,
+  Markers3D,
+  ObjectDraw3D,
+  Occluder3D,
+  POINT_PX,
+  Text3D,
+  hasCurves,
+  hiddenTwin,
+  objectDraw3D,
+  sceneOccludes,
+  screenPx,
+  silhouetteLines,
+} from "./render";
 import { Ground, ground } from "./scene";
 
+/**
+ * Rendering groups (spec §3.2). Without an occluder everything but the ground is in SCENE.
+ * With one, lines move after the occluders: their hidden twins first, the solid lines last.
+ */
+const GROUP = { scene: 1, occluders: 2, hidden: 3, lines: 4 } as const;
+BABYLON.RenderingManager.MAX_RENDERINGGROUPS = 5;
+/** Stencil values an occluder leaves where it is the nearest one: only "dashed" lets hidden twins through. */
+const STENCIL = { dashed: 1, hide: 2 } as const;
+
 const v3 = (p: Vec3) => new BABYLON.Vector3(p[0], p[1], p[2]);
+const vec = (v: BABYLON.Vector3): Vec3 => [v.x, v.y, v.z];
 const color3 = (hex: string) => BABYLON.Color3.FromHexString(hex);
 /** GreasedLine's width is twice what it covers on screen (measured: width 6 draws 3 px). */
 const GREASED_PER_PX = 2;
@@ -31,9 +56,16 @@ const KIND_ORDER: Record<TextKind, number> = { text: 0, point: 1, curve: 2, extr
 interface Built {
   draw: ObjectDraw3D;
   meshes: BABYLON.AbstractMesh[];
-  lines: { mesh: BABYLON.GreasedLineBaseMesh; part: Lines3D }[];
+  lines: LineMesh[];
+  /** The silhouette's lines, rebuilt whenever the camera moves (not in `meshes`). */
+  silhouette: LineMesh[];
   markers: Marker[];
   surface: BABYLON.StandardMaterial | null;
+}
+
+interface LineMesh {
+  mesh: BABYLON.GreasedLineBaseMesh;
+  part: Lines3D;
 }
 
 /** Thin-instanced spheres and the positions they stand at. */
@@ -57,6 +89,12 @@ export class View3D {
   private groundMeshes: BABYLON.AbstractMesh[] = [];
   private box: Box = viewBox([]);
   private withCurves = false;
+  /** Some shown surface is `hidden`: lines are drawn after the occluders, with hidden twins. */
+  private occludes = false;
+  /** The camera moved since the silhouettes were contoured. */
+  private silhouettesDirty = true;
+  /** The viewpoint the silhouettes were contoured from; null forces a new contour. */
+  private silhouetteKey: string | null = null;
   private ortho = false;
   private userMoved = false;
   private active = false;
@@ -85,13 +123,14 @@ export class View3D {
     this.canvas = document.createElement("canvas");
     this.canvas.id = "canvas3d";
     host.appendChild(this.canvas);
-    this.engine = new BABYLON.Engine(this.canvas, true, { preserveDrawingBuffer: true, stencil: false });
+    this.engine = new BABYLON.Engine(this.canvas, true, { preserveDrawingBuffer: true, stencil: true });
     this.scene = new BABYLON.Scene(this.engine);
     this.scene.useRightHandedSystem = true;
     this.camera = new BABYLON.ArcRotateCamera("cam", SNAPS.iso.alpha, SNAPS.iso.beta, 10, BABYLON.Vector3.Zero(), this.scene);
     this.camera.upVector = new BABYLON.Vector3(0, 0, 1);
     this.camera.lowerBetaLimit = 0; // the top view looks straight down
     this.camera.attachControl(this.canvas, true);
+    initWheelZoom(this.camera);
     // Once the user has orbited, panned or zoomed, auto-fit leaves the camera alone until "fit".
     this.canvas.addEventListener("pointermove", (ev) => {
       if (ev.buttons) this.userMoved = true;
@@ -103,10 +142,14 @@ export class View3D {
     new BABYLON.HemisphericLight("light", new BABYLON.Vector3(0.3, 0.5, 1), this.scene);
     // The grid is a backdrop: drawn first (group 0) without writing depth, then the scene
     // (group 1) over it, so curves lying on z = 0 are not speckled by the lines they cross.
-    this.scene.setRenderingAutoClearDepthStencil(1, false, false, false);
+    // Occluders, hidden twins and lines keep the depth and stencil the groups before them left.
+    for (const group of [GROUP.scene, GROUP.occluders, GROUP.hidden, GROUP.lines]) this.scene.setRenderingAutoClearDepthStencil(group, false, false, false);
     this.scene.onBeforeRenderObservable.add(() => this.beforeRender());
     this.scene.onAfterRenderObservable.add(() => this.afterRender());
-    this.camera.onViewMatrixChangedObservable.add(() => (this.labelsDirty = true));
+    this.camera.onViewMatrixChangedObservable.add(() => {
+      this.labelsDirty = true;
+      this.silhouettesDirty = true;
+    });
     this.toolbar = this.makeToolbar();
     this.labels = new LabelLayer(host);
     this.tooltip = document.createElement("div");
@@ -168,6 +211,7 @@ export class View3D {
 
   setOrtho(ortho: boolean): void {
     this.ortho = ortho;
+    this.silhouettesDirty = true;
     this.camera.mode = ortho ? BABYLON.Camera.ORTHOGRAPHIC_CAMERA : BABYLON.Camera.PERSPECTIVE_CAMERA;
     this.toolbar.querySelector("[data-projection]")!.textContent = ortho ? "ortho" : "persp";
   }
@@ -201,7 +245,7 @@ export class View3D {
     this.engine.resize();
     this.labelsDirty = true;
     const resolution = new BABYLON.Vector2(this.engine.getRenderWidth(), this.engine.getRenderHeight());
-    for (const b of this.built.values()) for (const l of b.lines) l.mesh.greasedLineMaterial!.resolution = resolution;
+    for (const b of this.built.values()) for (const l of [...b.lines, ...b.silhouette]) l.mesh.greasedLineMaterial!.resolution = resolution;
     for (const m of this.groundMeshes) {
       const line = m as BABYLON.GreasedLineBaseMesh;
       if (line.greasedLineMaterial) line.greasedLineMaterial.resolution = resolution;
@@ -220,8 +264,9 @@ export class View3D {
     const objects = [...this.store.objects.values()];
     const box = viewBox(objects.map((o) => o.geom));
     const withCurves = hasCurves(objects);
-    // Infinite curves, default surface windows and default opacity depend on the whole scene: rebuild when they move.
-    if (reset || !sameBox(box, this.box) || withCurves !== this.withCurves) {
+    // Infinite curves, default surface windows and default opacity depend on the whole scene, and
+    // so does where lines are drawn (an occluder anywhere moves them all): rebuild when those change.
+    if (reset || !sameBox(box, this.box) || withCurves !== this.withCurves || this.occluding(objects) !== this.occludes) {
       this.rebuild();
     } else {
       const touched = new Set(ids);
@@ -252,10 +297,16 @@ export class View3D {
     } else if (ev === "labels") {
       this.labelsDirty = true;
     } else if (ev === "visibility" || ev === "step") {
-      for (const [id, b] of this.built) {
-        const o = this.store.objects.get(id);
-        const visible = o ? this.ui.isVisible(o) : false;
-        b.meshes.forEach((m) => m.setEnabled(visible));
+      if (this.occluding([...this.store.objects.values()]) !== this.occludes) {
+        this.rebuild();
+      } else {
+        for (const [id, b] of this.built) {
+          const o = this.store.objects.get(id);
+          const visible = o ? this.ui.isVisible(o) : false;
+          b.meshes.forEach((m) => m.setEnabled(visible));
+        }
+        this.silhouetteKey = null; // hidden objects keep no silhouette
+        this.silhouettesDirty = true;
       }
       this.labelsDirty = true;
     } else if (ev === "selection") {
@@ -305,6 +356,7 @@ export class View3D {
 
   /** Per frame: orthographic extents follow the zoom, markers keep their pixel size. */
   private beforeRender(): void {
+    this.camera.getViewMatrix(); // the camera has moved for this frame, but its position and matrix lag until asked
     const aspect = this.engine.getAspectRatio(this.camera);
     if (this.ortho) Object.assign(this.camera, orthoExtents(this.camera.radius, this.camera.fov, aspect));
     const gauge = {
@@ -332,6 +384,38 @@ export class View3D {
       for (const marker of b.markers) size(marker, lit);
     }
     if (this.cursor) size(this.cursor, false);
+    if (this.silhouettesDirty) {
+      this.silhouettesDirty = false;
+      const view = this.viewpoint();
+      // An orthographic outline depends on the direction only: zoom and pan keep it.
+      const key = view.ortho ? `o${view.forward}` : `p${view.eye}`;
+      if (key !== this.silhouetteKey) {
+        this.silhouetteKey = key;
+        for (const b of this.built.values()) this.buildSilhouette(b, view);
+      }
+    }
+  }
+
+  private viewpoint(): Viewpoint {
+    return { eye: vec(this.camera.position), forward: vec(this.camera.getForwardRay(1).direction), ortho: this.ortho };
+  }
+
+  /** Spec §3.3: contour the object's silhouette from where the camera is now, replacing the last one. */
+  private buildSilhouette(b: Built, view = this.viewpoint()): void {
+    b.silhouette.forEach((l) => disposeMesh(l.mesh));
+    b.silhouette = [];
+    const s = b.draw.silhouette;
+    const o = this.store.objects.get(b.draw.id);
+    if (!s || !o || !this.ui.isVisible(o)) return;
+    const part = silhouetteLines(s, view, this.box);
+    if (!part) return;
+    b.silhouette = this.lineMeshes(`sil-${b.draw.id}`, part);
+    this.applyHighlightTo(b);
+  }
+
+  /** Whether a shown surface hides lines; a hidden one draws nothing, so it hides nothing. */
+  private occluding(objects: SceneObject[]): boolean {
+    return sceneOccludes(objects.filter((o) => this.ui.isVisible(o)));
   }
 
   /** Spec §5.4: the (u,v) pane's pointer, shown on its surface at S(u, v). */
@@ -366,7 +450,7 @@ export class View3D {
   private applyHighlightTo(b: Built): void {
     const lit = this.isLit(b.draw.id);
     const ws = this.widthScale;
-    for (const { mesh, part } of b.lines) mesh.greasedLineMaterial!.width = GREASED_PER_PX * screenPx(part.px, ws, lit && !part.extra);
+    for (const { mesh, part } of [...b.lines, ...b.silhouette]) mesh.greasedLineMaterial!.width = GREASED_PER_PX * screenPx(part.px, ws, lit && !part.extra);
     if (b.surface) b.surface.emissiveColor = lit ? b.surface.diffuseColor.scale(0.35) : BABYLON.Color3.Black();
   }
 
@@ -374,6 +458,8 @@ export class View3D {
     const objects = [...this.store.objects.values()];
     this.box = viewBox(objects.map((o) => o.geom));
     this.withCurves = hasCurves(objects);
+    this.occludes = this.occluding(objects);
+    this.silhouetteKey = null;
     for (const id of [...this.built.keys()]) this.drop(id);
     for (const o of objects) this.show(o);
     this.buildGround();
@@ -502,7 +588,9 @@ export class View3D {
   }
 
   private drop(id: string): void {
-    this.built.get(id)?.meshes.forEach(disposeMesh);
+    const b = this.built.get(id);
+    b?.meshes.forEach(disposeMesh);
+    b?.silhouette.forEach((l) => disposeMesh(l.mesh));
     this.built.delete(id);
     this.labelsDirty = true;
   }
@@ -510,25 +598,12 @@ export class View3D {
   private show(o: SceneObject): void {
     this.drop(o.id);
     const draw = objectDraw3D(o, { box: this.box, lookup: (id) => this.store.objects.get(id)?.geom, withCurves: this.withCurves });
-    const b: Built = { draw, meshes: [], lines: [], markers: [], surface: null };
-    for (const part of draw.lines) {
-      const color = part.extra ? mixHex(part.color, this.palette.bg, EXTRA_MIX) : part.color;
-      const mesh = this.greasedLine(`l-${o.id}`, part.paths, color, part.px, part.alpha);
-      b.lines.push({ mesh, part });
-      b.meshes.push(mesh);
-    }
+    const b: Built = { draw, meshes: [], lines: [], silhouette: [], markers: [], surface: null };
+    for (const part of draw.lines) b.lines.push(...this.lineMeshes(`l-${o.id}`, part));
+    b.meshes.push(...b.lines.map((l) => l.mesh));
     if (draw.surface) {
       const s = draw.surface;
-      const mesh = new BABYLON.Mesh(`s-${o.id}`, this.scene);
-      const data = new BABYLON.VertexData();
-      data.positions = s.mesh.positions;
-      data.indices = s.mesh.indices;
-      if (s.mesh.uvs.length) data.uvs = s.mesh.uvs;
-      data.normals = [];
-      BABYLON.VertexData.ComputeNormals(s.mesh.positions, s.mesh.indices, data.normals);
-      if (s.colors) data.colors = s.colors;
-      data.applyToMesh(mesh);
-      mesh.useVertexColors = s.colors !== undefined;
+      const mesh = this.triMesh(`s-${o.id}`, s.mesh, s.colors);
       const mat = new BABYLON.StandardMaterial(`m-${o.id}`, this.scene);
       mat.diffuseColor = s.colors ? new BABYLON.Color3(1, 1, 1) : color3(s.color);
       mat.specularColor = new BABYLON.Color3(0.2, 0.2, 0.2);
@@ -537,23 +612,80 @@ export class View3D {
       mat.alpha = s.alpha;
       mat.zOffset = 1; // curves lying on the surface stay in front of it
       mat.zOffsetUnits = 1;
+      // Lines come after the surfaces when something occludes: a see-through surface must not hide them.
+      if (this.occludes && s.alpha < 1) mat.disableDepthWrite = true;
       mesh.material = mat;
       mesh.metadata = { id: o.id };
+      mesh.renderingGroupId = GROUP.scene;
       b.surface = mat;
       b.meshes.push(mesh);
     }
+    if (draw.occluder) b.meshes.push(this.occluder(`o-${o.id}`, draw.occluder));
     for (const part of draw.markers) {
       const marker = this.markers(`p-${o.id}`, part);
+      marker.mesh.renderingGroupId = GROUP.scene;
       b.markers.push(marker);
       b.meshes.push(marker.mesh);
     }
     const visible = this.ui.isVisible(o);
-    b.meshes.forEach((m) => {
-      m.renderingGroupId = 1;
-      m.setEnabled(visible);
-    });
+    b.meshes.forEach((m) => m.setEnabled(visible));
     this.built.set(o.id, b);
+    this.buildSilhouette(b);
     this.applyHighlightTo(b);
+  }
+
+  /** A line part's mesh, and when something occludes, its hidden twin (spec §3.2). */
+  private lineMeshes(name: string, part: Lines3D): LineMesh[] {
+    const bg = this.palette.bg;
+    const solid = this.greasedLine(name, part.paths, part.extra ? mixHex(part.color, bg, EXTRA_MIX) : part.color, part.px, part.alpha);
+    if (!this.occludes) {
+      solid.renderingGroupId = GROUP.scene;
+      return [{ mesh: solid, part }];
+    }
+    solid.renderingGroupId = GROUP.lines;
+    const twin = hiddenTwin(part, this.box);
+    const hidden = this.greasedLine(`${name}-hidden`, twin.paths, mixHex(part.color, bg, EXTRA_MIX), twin.px, twin.alpha);
+    const mat = hidden.material!;
+    mat.depthFunction = BABYLON.Constants.GREATER; // only where something is in front
+    mat.disableDepthWrite = true;
+    mat.stencil.enabled = true;
+    mat.stencil.func = BABYLON.Constants.EQUAL; // and the nearest thing in front is a "dashed" occluder
+    mat.stencil.funcRef = STENCIL.dashed;
+    mat.stencil.mask = 0x00;
+    hidden.renderingGroupId = GROUP.hidden;
+    return [{ mesh: solid, part }, { mesh: hidden, part: twin }];
+  }
+
+  /** A `hidden` surface drawn into depth and stencil only: the last occluder to pass the depth test, the nearest, tags the pixel. */
+  private occluder(name: string, occ: Occluder3D): BABYLON.Mesh {
+    const mesh = this.triMesh(name, occ.mesh);
+    const mat = new BABYLON.StandardMaterial(`${name}-m`, this.scene);
+    mat.disableColorWrite = true;
+    mat.backFaceCulling = false;
+    mat.zOffset = 1; // lines lying on it stay in front of it
+    mat.zOffsetUnits = 1;
+    mat.stencil.enabled = true;
+    mat.stencil.func = BABYLON.Constants.ALWAYS;
+    mat.stencil.funcRef = STENCIL[occ.mode];
+    mat.stencil.opStencilDepthPass = BABYLON.Constants.REPLACE;
+    mesh.material = mat;
+    mesh.isPickable = false;
+    mesh.renderingGroupId = GROUP.occluders;
+    return mesh;
+  }
+
+  private triMesh(name: string, tri: TriMesh, colors?: number[]): BABYLON.Mesh {
+    const mesh = new BABYLON.Mesh(name, this.scene);
+    const data = new BABYLON.VertexData();
+    data.positions = tri.positions;
+    data.indices = tri.indices;
+    if (tri.uvs.length) data.uvs = tri.uvs;
+    data.normals = [];
+    BABYLON.VertexData.ComputeNormals(tri.positions, tri.indices, data.normals);
+    if (colors) data.colors = colors;
+    data.applyToMesh(mesh);
+    mesh.useVertexColors = colors !== undefined;
+    return mesh;
   }
 
   /**

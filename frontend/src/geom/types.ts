@@ -12,7 +12,8 @@ export type CurveGeom =
   | { type: "circle"; frame: Frame; r: number; range?: Range }
   | { type: "ellipse"; frame: Frame; a: number; b: number; range?: Range }
   | { type: "parabola"; frame: Frame; f: number; range?: Range }
-  | { type: "hyperbola"; frame: Frame; a: number; b: number; range?: Range };
+  | { type: "hyperbola"; frame: Frame; a: number; b: number; range?: Range }
+  | BsplineCurveGeom;
 
 /** A profile curve: an exact curve geom, or a polyline whose points are spaced evenly over `range`
  * (indexed by point when it has none, as in a pcurve). */
@@ -25,11 +26,46 @@ export type SurfaceGeom =
   | { type: "sphere"; frame: Frame; r: number; window?: Window }
   | { type: "torus"; frame: Frame; R: number; r: number; window?: Window }
   | { type: "extrusion"; profile: ProfileCurve; direction: Vec3; window?: Window }
-  | { type: "revolution"; profile: ProfileCurve; origin: Vec3; direction: Vec3; window?: Window };
+  | { type: "revolution"; profile: ProfileCurve; origin: Vec3; direction: Vec3; window?: Window }
+  | BsplineSurfaceGeom;
+
+/** An exact B-spline curve, as geomcore stores it: degree, control poles,
+ * per-pole weights (absent when not rational), distinct knots with
+ * multiplicities, and periodicity. A trimmed piece carries `range`. */
+export interface BsplineCurveGeom {
+  type: "bspline_curve";
+  degree: number;
+  poles: Vec3[];
+  weights?: number[];
+  knots: number[];
+  multiplicities: number[];
+  periodic: boolean;
+  range?: Range;
+}
+
+/** An exact B-spline surface: `nu` rows of `nv` poles (u-major), weights when
+ * rational, distinct knots with multiplicities and periodicity per direction. */
+export interface BsplineSurfaceGeom {
+  type: "bspline_surface";
+  u_degree: number;
+  v_degree: number;
+  nu: number;
+  nv: number;
+  poles: Vec3[];
+  weights?: number[];
+  u_knots: number[];
+  u_multiplicities: number[];
+  v_knots: number[];
+  v_multiplicities: number[];
+  u_periodic: boolean;
+  v_periodic: boolean;
+  window?: Window;
+}
 
 export type MarkerGeom =
   | { type: "polyline"; points: Vec3[] }
   | { type: "mesh"; vertices: Vec3[]; indices: number[]; values?: number[]; colormap?: string }
+  | { type: "box"; min: Vec3; max: Vec3 }
   | { type: "point"; p: Vec3 }
   | { type: "points"; positions: Vec3[]; size?: number; values?: number[]; colormap?: string }
   | { type: "arrow"; at: Vec3; vec: Vec3 }
@@ -49,9 +85,9 @@ export interface PcurveGeom {
 
 export type Geom = CurveGeom | SurfaceGeom | MarkerGeom | PcurveGeom;
 
-export const CURVE_TYPES: ReadonlySet<string> = new Set(["line", "circle", "ellipse", "parabola", "hyperbola"]);
+export const CURVE_TYPES: ReadonlySet<string> = new Set(["line", "circle", "ellipse", "parabola", "hyperbola", "bspline_curve"]);
 export const SURFACE_TYPES: ReadonlySet<string> = new Set([
-  "plane", "cylinder", "cone", "sphere", "torus", "extrusion", "revolution",
+  "plane", "cylinder", "cone", "sphere", "torus", "extrusion", "revolution", "bspline_surface",
 ]);
 
 export const isCurve = (g: Geom): g is CurveGeom => CURVE_TYPES.has(g.type);

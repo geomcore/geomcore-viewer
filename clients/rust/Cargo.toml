@@ -24,3 +24,7 @@ required-features = ["geomcore"]
 [[example]]
 name = "pcurve"
 required-features = ["geomcore"]
+
+[[example]]
+name = "bspline"
+required-features = ["geomcore"]

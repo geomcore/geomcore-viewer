@@ -22,7 +22,7 @@ from .spawn import ensure_server, probe, refused_hint
 # dark (#16181d) backgrounds (spec §3.5, tests/test_viewer.py), so it reads on a projector.
 STYLE_KEYS = ("color", "width", "dashed", "opacity")
 EXTRA_KEYS = frozenset({
-    "foci", "center", "axes", "asymptotes", "directrix", "vertex", "isolines", "wire",
+    "foci", "center", "axes", "asymptotes", "directrix", "vertex", "isolines", "wire", "hidden", "silhouette",
     "poles", "knots", "comb", "normals",
 })
 VIEWS = ("auto", "2d", "3d")
@@ -108,20 +108,23 @@ class Viewer:
 
     # -- adding ------------------------------------------------------------
     def add(self, *objs, label: str | None = None, group: str | None = None, u=None, v=None, operands=True,
-            **options):
+            resolution: int | None = None, **options):
         """Show geomcore objects, intersection results, points, or lists of them.
 
         Style: ``color``, ``width``, ``dashed``, ``opacity``. Curve extras:
         ``foci``, ``center``, ``axes``, ``asymptotes``, ``directrix``,
         ``vertex``; B-spline and Bézier extras: ``poles`` (control polygon),
         ``knots`` (knot points), ``comb=scale`` (curvature comb); surface extras
-        ``isolines``, ``wire``, ``normals=n``; ``u=``/``v=`` set a surface's
-        parameter window. A result draws its operands faded, except any the
-        scene already shows (equal value, windows aside): those it reuses, so
-        removing that object later removes it from the result's display too,
-        and an operand added after the result is drawn again. Pass
-        ``operands=False`` to leave all of them out. Re-adding a ``label``
-        replaces what that label showed before.
+        ``isolines``, ``wire``, ``normals=n``, ``hidden`` (``"dashed"`` or
+        ``"hide"``: what becomes of lines behind it) and ``silhouette``;
+        ``u=``/``v=`` set a surface's parameter window; ``resolution=`` sets the
+        sampled fallback density (curve segments, surface grid N×N) on bindings
+        without B-spline getters — exact geometry ignores it. A result draws its
+        operands faded, except any the scene already shows (equal value, windows
+        aside): those it reuses, so removing that object later removes it from
+        the result's display too, and an operand added after the result is drawn
+        again. Pass ``operands=False`` to leave all of them out. Re-adding a
+        ``label`` replaces what that label showed before.
         """
         if not objs:
             raise TypeError("add() needs at least one object")
@@ -133,7 +136,8 @@ class Viewer:
             replaced = set(self._families.get((self._step, label), ())) if label is not None else set()
             existing = [o["geom"] for o in self.objects.values()
                         if o["id"] not in replaced and o.get("step") in (None, self._step)] + [p["geom"] for p in parts]
-            object_parts = to_objects(obj, part_label, u=u, v=v, existing=existing, operands=operands)
+            object_parts = to_objects(obj, part_label, u=u, v=v, existing=existing, operands=operands,
+                                      resolution=resolution)
             if len(object_parts) == 1:
                 # Poles, knots, combs and normals come from the exact object, once its window is known.
                 object_parts[0]["exact_object"] = obj
@@ -142,9 +146,11 @@ class Viewer:
 
     def pcurve(self, curve, on, *, label: str | None = None, group: str | None = None, **options):
         """Show a curve given in a surface's (u, v) parameters: any geomcore 2D curve — a
-        ``Line2D``/``Circle2D`` or one of the others, sampled to a polyline — or a sequence of
-        ``(u, v)`` pairs. ``on`` is the surface, already added: its :class:`Handle` or id. The
-        page draws the curve on the surface in 3D and in the (u,v) pane.
+        ``Line2D``/``Circle2D``, or a ``TrimmedCurve2D`` of one, exactly; the others sampled to a
+        polyline — or a sequence of ``(u, v)`` pairs. ``on`` is the surface, already added: its
+        :class:`Handle` or id. The surface must be exact (not a sampled ``mesh``, which has no
+        (u, v) parametrization for the page to evaluate). The page draws the curve on the
+        surface in 3D and in the (u,v) pane.
         """
         surface = on.id if isinstance(on, Handle) else on
         if self._step is not None and f"{self._step}·{surface}" in self.objects:
@@ -186,6 +192,12 @@ class Viewer:
             geom["colormap"] = _colormap(colormap, "points")
         elif colormap is not None:
             raise ValueError("points: colormap= needs values=")
+        return self._commit([{"label": label, "geom": geom}], label, group, options)
+
+    def box(self, minimum, maximum, *, label: str | None = None, group: str | None = None, **options):
+        """Show an axis-aligned box (e.g. a geomcore ``BoundingBox3D`` — ``add`` takes
+        one directly — or two corners): the page draws its twelve edges."""
+        geom = {"type": "box", "min": as_vec(minimum), "max": as_vec(maximum)}
         return self._commit([{"label": label, "geom": geom}], label, group, options)
 
     def arrow(self, at, vec, *, label: str | None = None, group: str | None = None, **options):

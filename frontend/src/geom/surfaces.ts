@@ -1,3 +1,4 @@
+import { directionBounds, evalBsplineSurface, flatKnots } from "./bspline";
 import { evalCurve } from "./curves";
 import type { ProfileCurve, Range, SurfaceGeom } from "./types";
 import { Vec3, inFrame } from "./vec";
@@ -62,19 +63,38 @@ export function evalSurface(g: SurfaceGeom, u: number, v: number): Vec3 {
     }
     case "revolution":  // u is the angle, v the profile's parameter (geomcore's convention)
       return rotateAbout(evalProfile(g.profile, v), g.origin, g.direction, u);
+    case "bspline_surface":
+      return evalBsplineSurface(
+        g.u_degree, g.v_degree, g.nu, g.nv, g.poles, g.weights,
+        g.u_knots, g.u_multiplicities, g.v_knots, g.v_multiplicities,
+        g.u_periodic, g.v_periodic, u, v,
+      );
   }
 }
 
-/** A profile's own parameter window when it is finite: a full turn for a conic, a polyline's range. */
+/** A profile's own parameter window when it is finite: a full turn for a conic, a polyline's or a
+ * trimmed B-spline's range, an untrimmed B-spline's knot domain. */
 function profileWindow(profile: ProfileCurve): Range | null {
   if (profile.type === "polyline") return profile.range ?? [0, profile.points.length - 1];
+  if (profile.type === "bspline_curve") {
+    return profile.range ?? bsplineDomain(profile.knots, profile.multiplicities, profile.degree, profile.periodic);
+  }
   if (profile.type === "circle" || profile.type === "ellipse") return [0, TAU];
   return null;
 }
 
 /** A profile's period when its parameter wraps, else null. */
 function profilePeriod(profile: ProfileCurve): number | null {
+  if (profile.type === "bspline_curve" && profile.periodic && !profile.range) {
+    const [t0, t1] = bsplineDomain(profile.knots, profile.multiplicities, profile.degree, true);
+    return t1 - t0;
+  }
   return profile.type === "circle" || profile.type === "ellipse" ? TAU : null;
+}
+
+/** A B-spline direction's domain, from its knots. */
+function bsplineDomain(knots: number[], mults: number[], degree: number, periodic: boolean): Range {
+  return directionBounds(flatKnots(knots, mults), degree, periodic);
 }
 
 /** Full periods of closed parameter directions; null where the surface is infinite. */
@@ -93,10 +113,16 @@ export function naturalWindow(g: SurfaceGeom): { u: Range | null; v: Range | nul
       return { u: profileWindow(g.profile), v: null };
     case "revolution":
       return { u: [0, TAU], v: profileWindow(g.profile) };
+    case "bspline_surface":
+      // A B-spline patch is finite by construction: its knot domain.
+      return {
+        u: bsplineDomain(g.u_knots, g.u_multiplicities, g.u_degree, g.u_periodic),
+        v: bsplineDomain(g.v_knots, g.v_multiplicities, g.v_degree, g.v_periodic),
+      };
   }
 }
 
-/** The period of each parameter direction that wraps around (2π), null for one that does not. */
+/** The period of each parameter direction that wraps around, null for one that does not. */
 export function periods(g: SurfaceGeom): { u: number | null; v: number | null } {
   switch (g.type) {
     case "plane":
@@ -111,6 +137,11 @@ export function periods(g: SurfaceGeom): { u: number | null; v: number | null } 
       return { u: profilePeriod(g.profile), v: null };
     case "revolution":
       return { u: TAU, v: profilePeriod(g.profile) };
+    case "bspline_surface": {
+      const u = bsplineDomain(g.u_knots, g.u_multiplicities, g.u_degree, g.u_periodic);
+      const v = bsplineDomain(g.v_knots, g.v_multiplicities, g.v_degree, g.v_periodic);
+      return { u: g.u_periodic ? u[1] - u[0] : null, v: g.v_periodic ? v[1] - v[0] : null };
+    }
   }
 }
 

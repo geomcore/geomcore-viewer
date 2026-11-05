@@ -38,7 +38,7 @@ The viewer never computes intersections or any other geometric query.
 | `source` | no | client-side type name, e.g. `Ellipse3D` |
 | `step` | no | lesson step the object belongs to; the page shows one step at a time, objects without a step show in every step |
 | `style` | no | `color` (CSS), `width` (px), `dashed`, `opacity` (0–1; surfaces and meshes default to 0.45 when the scene holds a curve, polyline or pcurve, else 1) |
-| `extras` | no | curves: `foci`, `center`, `axes`, `asymptotes`, `directrix`, `vertex`; B-spline/Bézier curves: `poles` (array of points → control polygon and dots), `knots` (array of points → dots), `comb` (`{scale, teeth: [[base, tip], …]}` → teeth and their envelope); surfaces: `isolines: [nu, nv]` (or `true` for 12 × 6; drawn at the middle of each cell of the window), `wire` (lines only: the isolines, 24 × 12 by default, and the window's edges), `normals` (array of `[base, tip]` segments). The Python client computes the point/segment arrays from the exact geomcore object (`poles=True`, `knots=True`, `comb=scale`, `normals=n`); the page draws them as extras. Unknown extras are ignored. |
+| `extras` | no | curves: `foci`, `center`, `axes`, `asymptotes`, `directrix`, `vertex`; B-spline/Bézier curves: `poles` (array of points → control polygon and dots), `knots` (array of points → dots), `comb` (`{scale, teeth: [[base, tip], …]}` → teeth and their envelope); surfaces: `isolines: [nu, nv]` (or `true` for 12 × 6; drawn at the middle of each cell of the window), `wire` (lines only: the isolines, 24 × 12 by default, and the window's edges), `normals` (array of `[base, tip]` segments), `hidden` (`"dashed"` or `"hide"`: lines of any object behind the surface, its own included, are drawn dashed and faint, or not at all; see [Hidden lines](#hidden-lines-and-silhouettes)), `silhouette: true` (the surface's outline as seen from the camera, redrawn as it moves). The Python client computes the point/segment arrays from the exact geomcore object (`poles=True`, `knots=True`, `comb=scale`, `normals=n`); the page draws them as extras. Unknown extras are ignored. |
 | `meta` | no | free-form client data. The Python client sets `tag` (the intersection result's tag, e.g. `"points"`) and `params` (the numbers of the hit, e.g. `[t, s]` for `(t, P, s)`; a non-finite one is `null`); the 2D tooltip shows `params`. `operand: true` marks a result's operand or projection target: the views draw no label for it (hovering still names it). `tangent: true` marks a tangent hit or a tangency contact point (`tag: "contact"`): the panel and the labels show "tangent" next to the hit's name. |
 
 `view` is `"auto"`, `"2d"` or `"3d"`. `steps` is the ordered list of
@@ -65,20 +65,37 @@ read as `[x, y, 0]`. Every `frame` carries all three unit axes `o, x, y, z`
 | `extrusion` | `profile`, `direction` | `profile(u) + v·direction` |
 | `revolution` | `profile`, `origin`, `direction` | `profile(v)` rotated about the axis (`origin`, `direction`) by `u` (Rodrigues); u is the angle |
 | `mesh` | `vertices`, `indices`, `values?`, `colormap?` | triangles; `indices.length % 3 == 0` |
+| `box` | `min`, `max` | axis-aligned box between the two corners (either order); drawn as its twelve edges |
 | `point` | `p` | — |
 | `points` | `positions`, `size?`, `values?`, `colormap?` | point cloud |
 | `arrow` | `at`, `vec` | — |
 | `text` | `at`, `text` | — |
 | `note` | `text`, `level?` (`info` / `warn`) | panel only, e.g. `P: ∅ (parallel)` |
-| `pcurve` | `surface`, `curve` | `S(q(t))`: `surface` is a surface object's `id`; `curve` is a `line`, `circle` or `polyline` in z = 0 whose x is u and y is v |
+| `pcurve` | `surface`, `curve` | `S(q(t))`: `surface` is a surface object's `id` (any surface type above: not a `mesh`); `curve` is a `line`, `circle` (either may carry `range`) or `polyline` in z = 0 whose x is u and y is v |
 
-Reserved for when geomcore exposes B-spline getters (clients send
-`polyline` / `mesh` until then): `bspline_curve`, `bspline_surface`.
+B-splines travel exact, as geomcore stores them: a `bspline_curve` carries
+`degree`, `poles` (points), `weights` (one per pole; absent when the curve is
+not rational), `knots` (distinct values, as `BSplineCurve3D::knots` returns
+them), `multiplicities` (one per knot), `periodic`, and an optional `range`
+for a trimmed piece. A `bspline_surface` carries `u_degree`, `v_degree`, `nu`,
+`nv` (pole counts), `poles` (`nu` rows of `nv`, u-major), `weights` (absent
+when not rational), `u_knots`, `u_multiplicities`, `v_knots`,
+`v_multiplicities`, `u_periodic`, `v_periodic`, and an optional `window`
+showing a sub-region. The viewer evaluates them with de Boor's algorithm
+(Cox–de Boor basis functions, homogeneous divide when rational), identical to
+geomcore: a non-periodic direction clamps its parameter into its domain, a
+periodic one wraps it into its period (`last` itself closes the last span),
+and pole indices wrap modulo the pole count. A direction's domain is its knot
+bounds (`[flat[degree], flat[len - 1 - degree]]`, or `[flat[0], flat[last]]`
+when periodic); an explicit `window` on a `bspline_surface` shows part of it.
+Pole counts follow the kernel's rules (`n = Σ mults − degree − 1`, or
+`Σ mults − mults[last]` when periodic). Clients whose geomcore binding has no
+B-spline getters send a `polyline` / `mesh` instead.
 
 `extrusion.profile` and `revolution.profile` are any curve type above or a
 `polyline`. A polyline profile may carry `range: [t0, t1]` (t0 ≠ t1): its
 points are then spaced evenly over that parameter interval, which is how a
-sampled B-spline or Bézier profile keeps the kernel's parametrization.
+sampled profile keeps the kernel's parametrization.
 Without `range` its parameter is the point index (segment `i` spans
 `t ∈ [i, i + 1]`, as in a `pcurve`). A revolution's `direction` is the axis
 direction and must be non-zero.
@@ -92,19 +109,42 @@ minimum…maximum (a constant field sits in the middle) and colours each dot or
 vertex. Maps: `viridis` (the default), `plasma`, `turbo`, `coolwarm`, `gray`;
 an unknown name falls back to viridis. `colormap` without `values` is rejected.
 
-Radii (`r`, `a`, `b`, `R`) must be positive and `f` non-zero.
+Radii (`r`, `a`, `b`, `R`) must be positive and `f` non-zero. A curve that is
+a single point — the radius-zero circle or the B-spline with coinciding poles
+that geomcore's `u_iso`/`v_iso` give at a cone's apex, a sphere's pole or a
+torus's pinch — is sent as a `point` by both clients.
+
+### Hidden lines and silhouettes
+
+The 3D view can draw surfaces the way line drawings do: a surface with
+`"extras": {"wire": true, "hidden": "dashed", "silhouette": true}` shows its
+isolines and outline, solid where seen, dashed and faint where the surface
+itself (or another `hidden` surface) is in front. Visibility is decided per
+pixel against the `hidden` surfaces (an invisible tessellation of each, used
+for depth only); the nearest one decides: `"dashed"` lets the line through
+dashed, `"hide"` drops it. Lines behind an ordinary opaque surface stay
+hidden as before, and points, labels, the grid and the axes are never
+dashed. While some surface is `hidden`, see-through surfaces no longer hide
+the lines behind them. The plane view ignores both extras, and so does a
+`mesh`.
 
 ### Ranges and windows
 
 - Curves may carry `range: [t0, t1]`. Without it, `circle`/`ellipse` draw
   one full period; `line`/`parabola`/`hyperbola` are infinite and the
-  viewer draws the part that crosses the visible region.
+  viewer draws the part that crosses the visible region; a `bspline_curve`
+  draws its knot domain. Clients set `range`
+  from geomcore's `TrimmedCurve3D`/`TrimmedCurve2D` (`first`/`last`), so
+  segments, arcs, conic pieces and B-spline pieces stay exact.
 - Surfaces carry `window: {"u": [a, b], "v": [a, b]}`. Closed directions
   default to their full period (`cylinder`/`cone` u, `sphere` u and
   v ∈ [-π/2, π/2], `torus` u and v, `revolution` u); infinite directions
   (`plane` u/v, `cylinder`/`cone` v, `extrusion` u/v for an unbounded
   profile and v, `revolution` v for an unbounded profile) should always be
-  given. When one is missing the viewer draws it over ±the half-size of the
+  given. A `bspline_surface` has a finite domain by construction: the viewer
+  draws its knot domain unless an explicit `window` narrows it. (A `mesh`
+  baked from a B-spline by a client without B-spline getters has no domain:
+  its caller passes `u=`/`v=` to select what was sampled.) When one is missing the viewer draws it over ±the half-size of the
   scene's view box (1.5 × the scene's half-extent, at least 1) and does not
   flag the object. A swept profile's parameter is not a length, so that
   half-size is converted: ÷|d| for a `line`, `min(h, 2√(|f|·h))` for a

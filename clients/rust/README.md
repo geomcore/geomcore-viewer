@@ -35,13 +35,22 @@ If no server answers, the client warns once on stderr and keeps the objects;
 | `view.clear()`, `view.scene()`, `view.save(path)` | housekeeping |
 
 `Geom` has one variant per protocol type (`Geom::circle(frame, r)`, `.range(t0, t1)` on curves,
-`.window(u, v)` on surfaces). With the `geomcore` feature (Rust 1.85+), geomcore's curves,
-surfaces, points and `parametrize_on` results convert with `Geom::from(&x)` or pass straight
-to `add`. B-splines are sampled: a curve as a 256-segment polyline, a surface as a 48 × 48 mesh.
+`.window(u, v)` on surfaces, `Geom::bbox(min, max)` for an axis-aligned box). With the `geomcore`
+feature, geomcore's curves, surfaces, points, bounding boxes and `parametrize_on` results convert
+with `Geom::from(&x)` or pass straight to `add`: analytic curves and surfaces keep their exact
+definition, `TrimmedCurve3D`/`TrimmedCurve2D` keep their basis with a `range`, B-splines go exact
+(degree, poles, weights, knots, multiplicities), and the `Curve3D`/`Curve2D`/`Surface` and
+`ElementaryCurve`/`ElementarySurface` runtime enums unwrap to their geometry.
+Iso curves (`u_iso`/`v_iso`) are ordinary curves; one that collapses to a point (a pole, an
+apex, a collapsed B-spline edge) converts to `Geom::Point`.
 Intersection results are not mapped; add their points with `add_all`.
+
+Line-drawing surfaces: `Opts::new().extra("wire", true).extra("hidden", "dashed").extra("silhouette", true)`
+draws the isolines and the outline, dashed and faint where hidden (`protocol/SCENE.md`).
 
 `GEOMCORE_VIEWER_URL` picks the server, as for Python (default `http://127.0.0.1:8765`;
 a URL without a port means port 80).
 
 Examples (start a server first): `cargo run --example conics --features geomcore`,
-`cargo run --example pcurve --features geomcore`; add `-- --save scene.json` to also write the scene to a file.
+`cargo run --example pcurve --features geomcore`, `cargo run --example bspline --features geomcore`;
+add `-- --save scene.json` to also write the scene to a file.

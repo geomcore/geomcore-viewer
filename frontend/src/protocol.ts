@@ -49,7 +49,7 @@ export type ServerEvent =
   | { type: "remove"; id: string }
   | { type: "clear" };
 
-type FieldKind = "vec" | "vecs" | "num" | "nums" | "frame" | "str";
+type FieldKind = "vec" | "vecs" | "num" | "nums" | "floats" | "uints" | "frame" | "str";
 
 const FIELDS: Record<string, Record<string, FieldKind>> = {
   line: { o: "vec", d: "vec" },
@@ -57,13 +57,19 @@ const FIELDS: Record<string, Record<string, FieldKind>> = {
   ellipse: { frame: "frame", a: "num", b: "num" },
   parabola: { frame: "frame", f: "num" },
   hyperbola: { frame: "frame", a: "num", b: "num" },
+  bspline_curve: { degree: "num", poles: "vecs", knots: "floats", multiplicities: "uints" },
   plane: { frame: "frame" },
   cylinder: { frame: "frame", r: "num" },
   cone: { frame: "frame", semi_angle: "num", ref_radius: "num" },
   sphere: { frame: "frame", r: "num" },
   torus: { frame: "frame", R: "num", r: "num" },
+  bspline_surface: {
+    u_degree: "num", v_degree: "num", nu: "num", nv: "num", poles: "vecs",
+    u_knots: "floats", u_multiplicities: "uints", v_knots: "floats", v_multiplicities: "uints",
+  },
   polyline: { points: "vecs" },
   mesh: { vertices: "vecs", indices: "nums" },
+  box: { min: "vec", max: "vec" },
   point: { p: "vec" },
   points: { positions: "vecs" },
   arrow: { at: "vec", vec: "vec" },
@@ -93,6 +99,12 @@ function normalize(value: unknown, kind: FieldKind): unknown {
     }
     case "num":
       return finite(value) ? value : null;
+    case "floats":
+      return Array.isArray(value) && value.length > 0 && value.every(finite) ? value : null;
+    case "uints":
+      return Array.isArray(value) && value.length > 0 && value.every((i) => Number.isInteger(i) && i >= 1)
+        ? value
+        : null;
     case "nums":
       return Array.isArray(value) && value.every((i) => Number.isInteger(i) && i >= 0) ? value : null;
     case "str":
@@ -115,6 +127,47 @@ const isRange = (v: unknown): boolean => Array.isArray(v) && v.length === 2 && v
 function validWindow(w: unknown): boolean {
   const r = record(w);
   return r !== undefined && (r.u === undefined || isRange(r.u)) && (r.v === undefined || isRange(r.v));
+}
+
+const isCount = (v: unknown): v is number => Number.isInteger(v) && (v as number) >= 1;
+
+/** A B-spline direction's pole count from its knots, as the kernel requires. */
+function wantPoles(knots: number[], mults: number[], degree: number, periodic: boolean): number {
+  const sum = mults.reduce((a, m) => a + m, 0);
+  return periodic ? sum - mults[mults.length - 1] : sum - degree - 1;
+}
+
+function checkDirection(what: string, degree: number, n: number, knots: number[], mults: number[], periodic: boolean): string | null {
+  if (!isCount(degree)) return `${what}.degree must be an integer of at least 1`;
+  if (n < 2) return `${what} needs at least 2 poles`;
+  if (knots.length !== mults.length) return `${what} needs matching knots and multiplicities`;
+  if (typeof periodic !== "boolean") return `${what}.periodic must be a boolean`;
+  const want = wantPoles(knots, mults, degree, periodic);
+  return n === want ? null : `${what} holds ${n} poles but its knots describe ${want}`;
+}
+
+/** Structural checks for `bspline_curve` / `bspline_surface` (mirrors geomcore's construction rules). */
+function checkBspline(geom: Record<string, unknown>): string | null {
+  const weights = geom.weights;
+  if (weights !== undefined) {
+    if (!Array.isArray(weights) || !weights.every(finite)) return `${geom.type}.weights must be numbers`;
+    if (weights.length !== (geom.poles as Vec3[]).length) return `${geom.type}.weights must hold one weight per pole`;
+    if ((weights as number[]).some((w) => w <= 0)) return `${geom.type}.weights must be positive`;
+  }
+  if (geom.type === "bspline_curve") {
+    return checkDirection("bspline_curve", geom.degree as number, (geom.poles as Vec3[]).length,
+      geom.knots as number[], geom.multiplicities as number[], geom.periodic as boolean);
+  }
+  const nu = geom.nu as number;
+  const nv = geom.nv as number;
+  if (!isCount(nu) || !isCount(nv)) return "bspline_surface.nu/nv must be integers of at least 1";
+  if ((geom.poles as Vec3[]).length !== nu * nv) return "bspline_surface.poles must hold nu × nv points";
+  return (
+    checkDirection("bspline_surface.u", geom.u_degree as number, nu,
+      geom.u_knots as number[], geom.u_multiplicities as number[], geom.u_periodic as boolean) ??
+    checkDirection("bspline_surface.v", geom.v_degree as number, nv,
+      geom.v_knots as number[], geom.v_multiplicities as number[], geom.v_periodic as boolean)
+  );
 }
 
 /** Validate one geometry (its `type` is a string): the normalized geometry, or why it is rejected. */
@@ -140,6 +193,10 @@ function parseGeom(g: Record<string, unknown>): Geom | string {
     const n = (geom.vertices as Vec3[]).length;
     const idx = geom.indices as number[];
     if (idx.length % 3 !== 0 || idx.some((i) => i >= n)) return "mesh.indices must be triangles indexing vertices";
+  }
+  if (type === "bspline_curve" || type === "bspline_surface") {
+    const bad = checkBspline(geom);
+    if (bad) return bad;
   }
   if ((type === "points" || type === "mesh") && (g.values !== undefined || g.colormap !== undefined)) {
     const count = type === "points" ? (geom.positions as Vec3[]).length

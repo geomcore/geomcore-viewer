@@ -9,6 +9,31 @@ describe("parseObject", () => {
     expect(r).toEqual({ object: { id: "L", label: "L", geom: { type: "line", o: [0, 1, 0], d: [1, 0, 0] } } });
   });
 
+  it("accepts a box and pads 2D corners", () => {
+    const r = parseObject({ id: "B", geom: { type: "box", min: [0, 0], max: [1, 2, 3] } });
+    expect(r).toEqual({ object: { id: "B", geom: { type: "box", min: [0, 0, 0], max: [1, 2, 3] } } });
+  });
+
+  it("accepts exact B-splines", () => {
+    const curve = parseObject({
+      id: "C",
+      geom: { type: "bspline_curve", degree: 3, poles: [[0, 0, 0], [1, 2, 0], [3, 2, 1], [4, 0, 0]],
+              knots: [0, 1], multiplicities: [4, 4], periodic: false, range: [0, 0.5] },
+    });
+    expect("object" in curve && curve.object.geom).toEqual({
+      type: "bspline_curve", degree: 3, poles: [[0, 0, 0], [1, 2, 0], [3, 2, 1], [4, 0, 0]],
+      knots: [0, 1], multiplicities: [4, 4], periodic: false, range: [0, 0.5],
+    });
+    const surface = parseObject({
+      id: "S",
+      geom: { type: "bspline_surface", u_degree: 1, v_degree: 1, nu: 2, nv: 2,
+              poles: [[0, 0, 0], [0, 1, 0], [1, 0, 0], [1, 1, 1]],
+              u_knots: [0, 1], u_multiplicities: [2, 2], v_knots: [0, 1], v_multiplicities: [2, 2],
+              u_periodic: false, v_periodic: false },
+    });
+    expect("object" in surface).toBe(true);
+  });
+
   it.each([
     [{ geom: { type: "point", p: [0, 0, 0] } }, "?", "missing string id"],
     [{ id: "a", geom: { type: "foo" } }, "a", 'unknown type "foo"'],
@@ -24,6 +49,12 @@ describe("parseObject", () => {
     [{ id: "a", geom: { type: "polyline", points: [[0, 0, 0]] } }, "a", "polyline.points needs at least 2 points"],
     [{ id: "a", geom: { type: "points", positions: [] } }, "a", "points.positions must not be empty"],
     [{ id: "a", geom: { type: "mesh", vertices: [[0, 0, 0]], indices: [] } }, "a", "mesh.indices must be a non-empty multiple of 3"],
+    [{ id: "a", geom: { type: "box", min: [0, 0, 0] } }, "a", "box.max is missing or malformed"],
+    [{ id: "a", geom: { type: "bspline_curve", degree: 0, poles: [[0, 0, 0], [1, 0, 0]], knots: [0, 1], multiplicities: [2, 2], periodic: false } }, "a", "bspline_curve.degree must be an integer of at least 1"],
+    [{ id: "a", geom: { type: "bspline_curve", degree: 1, poles: [[0, 0, 0], [1, 0, 0]], knots: [0, 1], multiplicities: [2, 1], periodic: false } }, "a", "bspline_curve holds 2 poles but its knots describe 1"],
+    [{ id: "a", geom: { type: "bspline_curve", degree: 1, poles: [[0, 0, 0], [1, 0, 0]], weights: [1], knots: [0, 1], multiplicities: [2, 2], periodic: false } }, "a", "bspline_curve.weights must hold one weight per pole"],
+    [{ id: "a", geom: { type: "bspline_curve", degree: 1, poles: [[0, 0, 0], [1, 0, 0]], weights: [1, 0], knots: [0, 1], multiplicities: [2, 2], periodic: false } }, "a", "bspline_curve.weights must be positive"],
+    [{ id: "a", geom: { type: "bspline_surface", u_degree: 1, v_degree: 1, nu: 1, nv: 2, poles: [[0, 0, 0], [0, 1, 0]], u_knots: [0, 1], u_multiplicities: [2, 2], v_knots: [0, 1], v_multiplicities: [2, 2], u_periodic: false, v_periodic: false } }, "a", "bspline_surface.u needs at least 2 poles"],
     [{ id: "a", geom: { type: "constructor" } }, "a", 'unknown type "constructor"'],
     [{ id: "a", geom: { type: "pcurve", curve: { type: "line", o: [0, 0], d: [1, 0] } } }, "a", "pcurve.surface must be an object id"],
     [{ id: "a", geom: { type: "pcurve", surface: "Y", curve: { type: "ellipse", frame, a: 2, b: 1 } } }, "a", "pcurve.curve must be a line, circle or polyline"],

@@ -1,7 +1,7 @@
 import { ArcRotateCamera, Camera, Matrix, NullEngine, Scene, Vector3, Viewport } from "@babylonjs/core";
 import { describe, expect, it } from "vitest";
 import type { Vec3 } from "../src/geom/vec";
-import { SNAPS, Snap, cameraScale, fitRadius, orthoExtents, pixelSize } from "../src/view3d/camera";
+import { SNAPS, Snap, WHEEL_PERCENTAGE, cameraScale, fitRadius, initWheelZoom, orthoExtents, pixelSize } from "../src/view3d/camera";
 
 const W = 400;
 const H = 300;
@@ -28,20 +28,31 @@ function snapTo(cam: ArcRotateCamera, snap: Snap): void {
 }
 
 describe("cameraScale", () => {
-  it("keeps Babylon's default feel at a radius of 10", () => {
+  it("keeps Babylon's default pan feel at a radius of 10 and brackets the zoom", () => {
     const s = cameraScale(10);
-    expect(s.wheelPrecision).toBeCloseTo(3);
     expect(s.panningSensibility).toBeCloseTo(1000);
+    expect(s.lowerRadiusLimit).toBeCloseTo(0.1);
+    expect(s.upperRadiusLimit).toBeCloseTo(1000);
   });
 
-  it("scales the clip planes and input feel with the scene", () => {
+  it("scales the clip planes, pan feel and zoom limits with the scene", () => {
     const small = cameraScale(0.01);
     const large = cameraScale(1000);
     expect(small.minZ).toBeCloseTo(1e-5);
     expect(small.maxZ).toBeCloseTo(1);
     expect(large.maxZ).toBeCloseTo(1e5);
-    expect(small.wheelPrecision).toBeGreaterThan(large.wheelPrecision);
     expect(small.panningSensibility).toBeGreaterThan(large.panningSensibility);
+    expect(small.lowerRadiusLimit).toBeCloseTo(1e-4);
+    expect(large.upperRadiusLimit).toBeCloseTo(1e5);
+  });
+
+  it("zooms by a fixed gentle fraction of the current radius", () => {
+    expect(WHEEL_PERCENTAGE).toBeGreaterThan(0);
+    expect(WHEEL_PERCENTAGE).toBeLessThan(0.05);
+    const { cam } = rig();
+    initWheelZoom(cam);
+    const wheel = cam.inputs.attached.mousewheel as { wheelDeltaPercentage?: number };
+    expect(wheel.wheelDeltaPercentage).toBe(WHEEL_PERCENTAGE);
   });
 });
 

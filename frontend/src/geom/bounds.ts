@@ -33,6 +33,7 @@ export function sceneBounds(geoms: Iterable<Geom>): Box | null {
       case "points": g.positions.forEach((p) => grow(p)); break;
       case "polyline": g.points.forEach((p) => grow(p)); break;
       case "mesh": g.vertices.forEach((p) => grow(p)); break;
+      case "box": grow(g.min); grow(g.max); break;
       case "arrow": grow(g.at); grow(add(g.at, g.vec)); break;
       case "text": grow(g.at); break;
       case "line":
@@ -45,6 +46,8 @@ export function sceneBounds(geoms: Iterable<Geom>): Box | null {
         break;
       case "circle": grow(g.frame.o, g.r); break;
       case "ellipse": grow(g.frame.o, Math.max(g.a, g.b)); break;
+      case "bspline_curve": g.poles.forEach((p) => grow(p)); break; // the convex hull holds the curve
+      case "bspline_surface": g.poles.forEach((p) => grow(p)); break; // weights are positive: the hull holds the patch
       case "note": break;
       default:
         if (isSurface(g)) {

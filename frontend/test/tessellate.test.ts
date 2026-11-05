@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { segmentDistance } from "../src/geom/sample";
-import { arcSegments, arrowPolylines, curvePieces, isoLines, surfaceGrid, tessellateSurface, windowEdges } from "../src/geom/tessellate";
+import { arcSegments, arrowPolylines, boxEdges, curvePieces, isoLines, surfaceGrid, tessellateSurface, windowEdges, WORLD_TOL } from "../src/geom/tessellate";
 import { evalSurface } from "../src/geom/surfaces";
 import { evalCurve } from "../src/geom/curves";
 import { halfSize, sameBox, sceneBounds, viewBox } from "../src/geom/bounds";
@@ -18,7 +18,7 @@ describe("curvePieces", () => {
     expect(rest).toEqual([]);
     expect(piece.ts[0]).toBe(0);
     expect(piece.ts[piece.ts.length - 1]).toBeCloseTo(2 * Math.PI, 12);
-    const tol = 5e-4 * 5; // WORLD_TOL × the half-size of the ±5 box
+    const tol = WORLD_TOL * 5; // WORLD_TOL × the half-size of the ±5 box
     for (let i = 0; i + 1 < piece.pts.length; i++) {
       const p = evalCurve(g, (piece.ts[i] + piece.ts[i + 1]) / 2);
       expect(segmentDistance(p, piece.pts[i], piece.pts[i + 1])).toBeLessThanOrEqual(tol + 1e-12);
@@ -33,6 +33,29 @@ describe("curvePieces", () => {
 
   it("gives nothing for a line outside the box", () => {
     expect(curvePieces({ type: "line", o: [0, 0, 9], d: [1, 0, 0] }, viewBox([]))).toEqual([]);
+  });
+
+  it("follows every wiggle of a B-spline within the tolerance", () => {
+    // One full wiggle per seed segment: a midpoint that lands on the chord must
+    // not hide the wiggle (16 flat seeds over [0, 16] would draw straight chords).
+    const poles: Vec3[] = [];
+    for (let i = 0; i < 19; i++) poles.push([i * 0.5, i % 2 ? 3 : -3, 0]);
+    const g = {
+      type: "bspline_curve", degree: 3, poles,
+      knots: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
+      multiplicities: [4, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 4], periodic: false,
+    } as const;
+    const box = viewBox([{ type: "point", p: [0, 0, 0] }, { type: "point", p: [9, 0, 0] }]);
+    const tol = WORLD_TOL * halfSize(box);
+    const pieces = curvePieces(g, box);
+    expect(pieces.length).toBeGreaterThan(0);
+    for (const piece of pieces) {
+      expect(piece.pts.length).toBeGreaterThan(32); // the wiggles are drawn, not chorded through
+      for (let i = 0; i + 1 < piece.pts.length; i++) {
+        const p = evalCurve(g, (piece.ts[i] + piece.ts[i + 1]) / 2);
+        expect(segmentDistance(p, piece.pts[i], piece.pts[i + 1])).toBeLessThanOrEqual(tol * 2);
+      }
+    }
   });
 });
 
@@ -140,15 +163,29 @@ describe("arrowPolylines", () => {
   });
 });
 
+describe("boxEdges", () => {
+  it("draws twelve axis-aligned edges of the box, either corner order", () => {
+    const edges = boxEdges([0, 0, 0], [1, 2, 3]);
+    expect(edges).toHaveLength(12);
+    for (const [p, q] of edges) {
+      const diff = [q[0] - p[0], q[1] - p[1], q[2] - p[2]];
+      expect(diff.filter((d) => d !== 0)).toHaveLength(1);
+    }
+    expect(boxEdges([1, 2, 3], [0, 0, 0])).toEqual(edges);
+  });
+});
+
 describe("bounds", () => {
   it("covers finite geometry and only the origin of infinite curves", () => {
     const geoms: Geom[] = [
       { type: "circle", frame: { ...world, o: [1, 0, 0] }, r: 2 },
       { type: "point", p: [0, 4, 0] },
       { type: "line", o: [0, 0, -1], d: [1, 0, 0] },
+      { type: "box", min: [4, 4, 4], max: [5, 5, 5] },
+      { type: "bspline_curve", degree: 1, poles: [[6, 0, 0], [7, 0, 0]], knots: [0, 1], multiplicities: [2, 2], periodic: false },
       { type: "note", text: "hi" },
     ];
-    expect(sceneBounds(geoms)).toEqual({ min: [-1, -2, -2], max: [3, 4, 2] });
+    expect(sceneBounds(geoms)).toEqual({ min: [-1, -2, -2], max: [7, 5, 5] });
     expect(sceneBounds([{ type: "note", text: "x" }])).toBeNull();
   });
 
@@ -184,6 +221,10 @@ describe("inPlaneZ0", () => {
     [{ type: "line", o: [0, 0, 0], d: [0, 0, 1] }, false],
     [{ type: "point", p: [1, 2, 0] }, true],
     [{ type: "polyline", points: [[0, 0, 0], [1, 0, 1e-3]] }, false],
+    [{ type: "bspline_curve", degree: 1, poles: [[0, 0, 0], [1, 0, 0]], knots: [0, 1], multiplicities: [2, 2], periodic: false }, true],
+    [{ type: "bspline_curve", degree: 1, poles: [[0, 0, 0], [1, 0, 1]], knots: [0, 1], multiplicities: [2, 2], periodic: false }, false],
+    [{ type: "box", min: [0, 0, 0], max: [1, 1, 0] }, true],
+    [{ type: "box", min: [0, 0, 0], max: [1, 1, 1] }, false],
     [{ type: "plane", frame: world }, false],
   ])("%j → %s", (g, want) => {
     expect(inPlaneZ0(g)).toBe(want);

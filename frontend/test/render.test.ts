@@ -74,12 +74,30 @@ describe("buildDrawList", () => {
       obj("hidden", { type: "point", p: [0, 0, 0] }),
       obj("lifted", { type: "point", p: [0, 0, 1] }),
       obj("sphere", { type: "sphere", frame, r: 1 }),
+      obj("tall-box", { type: "box", min: [0, 0, 0], max: [1, 1, 1] }),
       obj("note", { type: "note", text: "hi" }),
     ];
     const list = buildDrawList(objects, cam, opts({ visible: (o) => o.id !== "hidden" }));
     expect(list.dots).toEqual([]);
     expect(list.strokes).toEqual([]);
     expect(list.texts).toEqual([]);
+  });
+
+  it("draws a flat box as its twelve edges", () => {
+    const list = buildDrawList([obj("B", { type: "box", min: [-1, -1, 0], max: [1, 1, 0] })], cam, opts());
+    expect(list.strokes).toHaveLength(1);
+    expect(list.strokes[0].paths).toHaveLength(12);
+    expect(list.pickables[0].polylines).toHaveLength(12);
+  });
+
+  it("draws a planar B-spline with its parameter for picking", () => {
+    const c = obj("C", { type: "bspline_curve", degree: 1, poles: [[0, 0, 0], [2, 0, 0]],
+      knots: [0, 1], multiplicities: [2, 2], periodic: false });
+    const list = buildDrawList([c], cam, opts());
+    expect(list.strokes).toHaveLength(1);
+    const [line] = list.pickables[0].polylines;
+    expect(line.ts).not.toBeNull();
+    expect(line.ts![0]).toBe(0);
   });
 
   it("draws extras dashed, thinner and faded towards the background", () => {

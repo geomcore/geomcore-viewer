@@ -3,7 +3,7 @@ import { evalCurve } from "../geom/curves";
 import { curveExtras, dataExtras } from "../geom/extras";
 import { inPlaneZ0 } from "../geom/planar";
 import { Sampled, dashPolyline, sampleAdaptive } from "../geom/sample";
-import { arrowPolylines } from "../geom/tessellate";
+import { arrowPolylines, boxEdges } from "../geom/tessellate";
 import { CurveGeom, isCurve } from "../geom/types";
 import type { Vec2, Vec3 } from "../geom/vec";
 import type { SceneObject } from "../protocol";
@@ -152,6 +152,10 @@ export function buildDrawList(objects: Iterable<SceneObject>, cam: Camera2D, opt
     } else if (g.type === "polyline" || g.type === "arrow") {
       const lines = g.type === "polyline" ? [g.points] : arrowPolylines(g.at, g.vec);
       const paths = lines.map((l) => l.map(screen));
+      stroke(paths);
+      pick.polylines = paths.map((pts) => ({ pts, ts: null }));
+    } else if (g.type === "box") {
+      const paths = boxEdges(g.min, g.max).map((l) => l.map(screen));
       stroke(paths);
       pick.polylines = paths.map((pts) => ({ pts, ts: null }));
     } else if (g.type === "point") {
