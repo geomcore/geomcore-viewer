@@ -27,7 +27,8 @@ jobs:
       - run: npm run build
       - run: npm run e2e
   python:
-    runs-on: ubuntu-latest
+    # Python 3.9 is not in the ubuntu-latest (26.04) tool cache; 22.04 still has it.
+    runs-on: ubuntu-22.04
     strategy:
       matrix:
         python-version: ["3.9", "3.12"]
