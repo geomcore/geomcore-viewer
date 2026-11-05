@@ -2,19 +2,21 @@ import { halfSize } from "../geom/bounds";
 import { curveExtras } from "../geom/extras";
 import { liftPcurve, pcurveSurface } from "../geom/pcurve";
 import { Sampled, dashPolyline } from "../geom/sample";
+import { Viewpoint, silhouette } from "../geom/silhouette";
 import { evalSurface } from "../geom/surfaces";
 import {
   SurfaceGrid,
   TriMesh,
   WORLD_TOL,
   arrowPolylines,
+  boxEdges,
   curvePieces,
   isoLines,
   surfaceGrid,
   tessellateSurface,
   windowEdges,
 } from "../geom/tessellate";
-import { Geom, isCurve, isPcurve, isSurface } from "../geom/types";
+import { Geom, SurfaceGeom, isCurve, isPcurve, isSurface } from "../geom/types";
 import type { Box, Vec3 } from "../geom/vec";
 import type { SceneObject } from "../protocol";
 import { colorOf } from "../ui/colors";
@@ -37,10 +39,17 @@ export const ISOLINES: [number, number] = [12, 6];
 export const WIRE_ISOLINES: [number, number] = [24, 12];
 /** 3D dashes are cut in world units: this fraction of the view box's half-size drawn, then skipped. */
 export const DASH: [number, number] = [0.03, 0.02];
+/** A line's hidden part (spec §3.2): dashed, this much of its width and of its opacity. */
+export const HIDDEN_PX = 0.7;
+export const HIDDEN_ALPHA = 0.6;
+/** Silhouettes are this many times as heavy as isolines. */
+export const SILHOUETTE_PX = 1.5;
 
 export interface Lines3D {
   id: string;
   extra: boolean;
+  /** The paths are already cut into dashes (an extra, a `dashed` style, a hidden part). */
+  dashed: boolean;
   paths: Vec3[][];
   color: string;
   /** Width in CSS pixels before presentation scaling and highlight. */
@@ -53,6 +62,25 @@ export interface Surface3D {
   mesh: TriMesh;
   /** The analytic surface's grid (picking maps the mesh's normalized uvs back through it); null for a mesh. */
   grid: SurfaceGrid | null;
+  color: string;
+  alpha: number;
+}
+
+/** What lines behind an occluder become: dashed and faint, or gone. */
+export type HiddenMode = "dashed" | "hide";
+
+/** A `hidden` surface's tessellation, drawn into depth and stencil only (spec §3.2). */
+export interface Occluder3D {
+  id: string;
+  mesh: TriMesh;
+  mode: HiddenMode;
+}
+
+/** A `silhouette` surface: what the view needs to contour it again whenever the camera moves. */
+export interface Silhouette3D {
+  id: string;
+  g: SurfaceGeom;
+  grid: SurfaceGrid;
   color: string;
   alpha: number;
 }
@@ -89,6 +117,8 @@ export interface ObjectDraw3D {
   id: string;
   lines: Lines3D[];
   surface: Surface3D | null;
+  occluder: Occluder3D | null;
+  silhouette: Silhouette3D | null;
   markers: Markers3D[];
   texts: Text3D[];
   pick: Pickable3D;
@@ -126,6 +156,32 @@ export function isolineCounts(extras: Record<string, unknown> | undefined): [num
   return extras?.wire ? WIRE_ISOLINES : null;
 }
 
+/** The `hidden` extra: `"dashed"` or `"hide"`, any other value ignored. */
+export function hiddenMode(extras: Record<string, unknown> | undefined): HiddenMode | null {
+  const mode = extras?.hidden;
+  return mode === "dashed" || mode === "hide" ? mode : null;
+}
+
+/** True when some analytic surface hides lines: the view then draws lines after the occluders, and their hidden twins. */
+export function sceneOccludes(objects: Iterable<SceneObject>): boolean {
+  for (const o of objects) if (isSurface(o.geom) && hiddenMode(o.extras)) return true;
+  return false;
+}
+
+/** A line's part behind a `"dashed"` occluder: cut into dashes (unless it already is), thinner and fainter. */
+export function hiddenTwin(part: Lines3D, box: Box): Lines3D {
+  const half = halfSize(box);
+  const paths = part.dashed ? part.paths : part.paths.flatMap((p) => dashPolyline(p, DASH[0] * half, DASH[1] * half));
+  return { ...part, paths, dashed: true, px: part.px * HIDDEN_PX, alpha: part.alpha * HIDDEN_ALPHA };
+}
+
+/** The silhouette from `view` as a line part, or null when the surface shows none. */
+export function silhouetteLines(s: Silhouette3D, view: Viewpoint, box: Box): Lines3D | null {
+  const paths = silhouette(s.g, s.grid, view, WORLD_TOL * halfSize(box));
+  if (!paths.length) return null;
+  return { id: s.id, extra: false, dashed: false, paths, color: s.color, px: EDGE_PX * SILHOUETTE_PX, alpha: s.alpha };
+}
+
 /** Width or radius on screen: the base pixels × presentation scale, plus the highlight when hovered or selected. */
 export const screenPx = (px: number, widthScale: number, lit: boolean): number => px * widthScale + (lit ? HIGHLIGHT_PX : 0);
 
@@ -142,7 +198,16 @@ function curveAnchor(pieces: Vec3[][]): Vec3 | null {
  * testable without WebGL; widths stay in pixels for the view to scale.
  */
 export function objectDraw3D(o: SceneObject, ctx: Context3D): ObjectDraw3D {
-  const out: ObjectDraw3D = { id: o.id, lines: [], surface: null, markers: [], texts: [], pick: { id: o.id, polylines: [], dots: [] } };
+  const out: ObjectDraw3D = {
+    id: o.id,
+    lines: [],
+    surface: null,
+    occluder: null,
+    silhouette: null,
+    markers: [],
+    texts: [],
+    pick: { id: o.id, polylines: [], dots: [] },
+  };
   const g = o.geom;
   const color = colorOf(o);
   const alpha = Math.min(Math.max(o.style?.opacity ?? 1, 0), 1);
@@ -151,7 +216,8 @@ export function objectDraw3D(o: SceneObject, ctx: Context3D): ObjectDraw3D {
   const dash = (paths: Vec3[][]): Vec3[][] => paths.flatMap((p) => dashPolyline(p, DASH[0] * half, DASH[1] * half));
   const stroke = (paths: Vec3[][], extra = false, px = extra ? EXTRA_PX : (o.style?.width ?? LINE_PX)) => {
     const drawn = paths.filter((p) => p.length >= 2);
-    if (drawn.length) out.lines.push({ id: o.id, extra, paths: extra || o.style?.dashed ? dash(drawn) : drawn, color, px, alpha });
+    const dashed = extra || o.style?.dashed === true;
+    if (drawn.length) out.lines.push({ id: o.id, extra, dashed, paths: dashed ? dash(drawn) : drawn, color, px, alpha });
   };
   const curve = (pieces: Sampled<Vec3>[]) => {
     const paths = pieces.map((s) => s.pts);
@@ -176,7 +242,11 @@ export function objectDraw3D(o: SceneObject, ctx: Context3D): ObjectDraw3D {
     if (s) curve(liftPcurve(g, s, ctx.box, tol));
   } else if (isSurface(g)) {
     const grid = surfaceGrid(g, half, tol);
-    out.surface = { id: o.id, mesh: tessellateSurface(g, grid), grid, color, alpha: surfaceAlpha(o, ctx.withCurves) };
+    const mesh = tessellateSurface(g, grid);
+    out.surface = { id: o.id, mesh, grid, color, alpha: surfaceAlpha(o, ctx.withCurves) };
+    const mode = hiddenMode(o.extras);
+    if (mode) out.occluder = { id: o.id, mesh, mode };
+    if (o.extras?.silhouette === true) out.silhouette = { id: o.id, g, grid, color, alpha };
     const counts = isolineCounts(o.extras);
     if (counts) stroke(isoLines(g, grid, counts[0], counts[1]), false, EDGE_PX);
     if (o.extras?.wire) {
@@ -190,6 +260,10 @@ export function objectDraw3D(o: SceneObject, ctx: Context3D): ObjectDraw3D {
     out.surface = { id: o.id, mesh, grid: null, color, alpha: surfaceAlpha(o, ctx.withCurves) };
   } else if (g.type === "polyline" || g.type === "arrow") {
     const lines = g.type === "polyline" ? [g.points] : arrowPolylines(g.at, g.vec);
+    stroke(lines);
+    out.pick.polylines = lines.map((pts) => ({ pts, ts: null }));
+  } else if (g.type === "box") {
+    const lines = boxEdges(g.min, g.max);
     stroke(lines);
     out.pick.polylines = lines.map((pts) => ({ pts, ts: null }));
   } else if (g.type === "point") {

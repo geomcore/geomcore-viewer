@@ -87,6 +87,18 @@ pub enum Geom {
     Polyline {
         points: Vec<Vec3>,
     },
+    /// An exact B-spline curve: degree, control poles, per-pole weights when
+    /// rational, distinct knots with multiplicities, and periodicity. A
+    /// trimmed piece carries its parameter `range`.
+    BsplineCurve {
+        degree: usize,
+        poles: Vec<Vec3>,
+        weights: Option<Vec<f64>>,
+        knots: Vec<f64>,
+        multiplicities: Vec<u32>,
+        periodic: bool,
+        range: Option<[f64; 2]>,
+    },
     Plane {
         frame: Frame,
         window: Window,
@@ -117,6 +129,33 @@ pub enum Geom {
     Mesh {
         vertices: Vec<Vec3>,
         indices: Vec<u32>,
+    },
+    /// An exact B-spline surface: degrees, the pole net (`nu` rows of `nv`
+    /// poles), per-pole weights when rational, distinct knots with
+    /// multiplicities per direction, periodicity, and a [`Window`]. The
+    /// domain comes from the knots; an explicit window shows a sub-region.
+    BsplineSurface {
+        u_degree: usize,
+        v_degree: usize,
+        nu: usize,
+        nv: usize,
+        poles: Vec<Vec3>,
+        weights: Option<Vec<f64>>,
+        u_knots: Vec<f64>,
+        u_multiplicities: Vec<u32>,
+        v_knots: Vec<f64>,
+        v_multiplicities: Vec<u32>,
+        u_periodic: bool,
+        v_periodic: bool,
+        window: Window,
+    },
+    /// An axis-aligned box: the points between the `min` and `max` corners.
+    /// Either corner may hold the smaller coordinates; the viewer draws the
+    /// twelve edges. (From a geomcore `BoundingBox3D` once the client moves
+    /// past geomcore 0.28, which has no bounding boxes yet.)
+    Box {
+        min: Vec3,
+        max: Vec3,
     },
     Point {
         p: Vec3,
@@ -165,6 +204,16 @@ impl Geom {
     pub fn polyline(points: Vec<Vec3>) -> Geom {
         Geom::Polyline { points }
     }
+    pub fn bspline_curve(
+        degree: usize,
+        poles: Vec<Vec3>,
+        weights: Option<Vec<f64>>,
+        knots: Vec<f64>,
+        multiplicities: Vec<u32>,
+        periodic: bool,
+    ) -> Geom {
+        Geom::BsplineCurve { degree, poles, weights, knots, multiplicities, periodic, range: None }
+    }
     pub fn plane(frame: Frame) -> Geom {
         Geom::Plane { frame, window: Window::default() }
     }
@@ -182,6 +231,40 @@ impl Geom {
     }
     pub fn mesh(vertices: Vec<Vec3>, indices: Vec<u32>) -> Geom {
         Geom::Mesh { vertices, indices }
+    }
+    pub fn bbox(min: Vec3, max: Vec3) -> Geom {
+        Geom::Box { min, max }
+    }
+    #[allow(clippy::too_many_arguments)]
+    pub fn bspline_surface(
+        u_degree: usize,
+        v_degree: usize,
+        nu: usize,
+        nv: usize,
+        poles: Vec<Vec3>,
+        weights: Option<Vec<f64>>,
+        u_knots: Vec<f64>,
+        u_multiplicities: Vec<u32>,
+        v_knots: Vec<f64>,
+        v_multiplicities: Vec<u32>,
+        u_periodic: bool,
+        v_periodic: bool,
+    ) -> Geom {
+        Geom::BsplineSurface {
+            u_degree,
+            v_degree,
+            nu,
+            nv,
+            poles,
+            weights,
+            u_knots,
+            u_multiplicities,
+            v_knots,
+            v_multiplicities,
+            u_periodic,
+            v_periodic,
+            window: Window::default(),
+        }
     }
     pub fn point(p: Vec3) -> Geom {
         Geom::Point { p }
@@ -206,7 +289,8 @@ impl Geom {
             | Geom::Circle { range, .. }
             | Geom::Ellipse { range, .. }
             | Geom::Parabola { range, .. }
-            | Geom::Hyperbola { range, .. } => *range = Some([t0, t1]),
+            | Geom::Hyperbola { range, .. }
+            | Geom::BsplineCurve { range, .. } => *range = Some([t0, t1]),
             _ => {}
         }
         self
@@ -230,12 +314,15 @@ impl Geom {
             Geom::Parabola { .. } => "parabola",
             Geom::Hyperbola { .. } => "hyperbola",
             Geom::Polyline { .. } => "polyline",
+            Geom::BsplineCurve { .. } => "bspline_curve",
             Geom::Plane { .. } => "plane",
             Geom::Cylinder { .. } => "cylinder",
             Geom::Cone { .. } => "cone",
             Geom::Sphere { .. } => "sphere",
             Geom::Torus { .. } => "torus",
             Geom::Mesh { .. } => "mesh",
+            Geom::BsplineSurface { .. } => "bspline_surface",
+            Geom::Box { .. } => "box",
             Geom::Point { .. } => "point",
             Geom::Points { .. } => "points",
             Geom::Arrow { .. } => "arrow",
@@ -248,7 +335,12 @@ impl Geom {
     pub fn is_surface(&self) -> bool {
         matches!(
             self,
-            Geom::Plane { .. } | Geom::Cylinder { .. } | Geom::Cone { .. } | Geom::Sphere { .. } | Geom::Torus { .. }
+            Geom::Plane { .. }
+                | Geom::Cylinder { .. }
+                | Geom::Cone { .. }
+                | Geom::Sphere { .. }
+                | Geom::Torus { .. }
+                | Geom::BsplineSurface { .. }
         )
     }
 
@@ -258,14 +350,16 @@ impl Geom {
             | Geom::Cylinder { window, .. }
             | Geom::Cone { window, .. }
             | Geom::Sphere { window, .. }
-            | Geom::Torus { window, .. } => Some(window),
+            | Geom::Torus { window, .. }
+            | Geom::BsplineSurface { window, .. } => Some(window),
             _ => None,
         }
     }
 
     /// Why the viewer would reject this geometry, checked before anything is sent:
     /// a non-finite number, a radius that is not positive, a zero direction,
-    /// too few points or a malformed mesh or pcurve.
+    /// too few points or poles, mismatched weights, knots or multiplicities,
+    /// or a malformed mesh or pcurve.
     pub fn problem(&self) -> Option<String> {
         let mut nums: Vec<f64> = Vec::new();
         self.numbers(&mut nums);
@@ -283,6 +377,43 @@ impl Geom {
             Geom::Torus { major, minor, .. } => positive("R", *major).or_else(|| positive("r", *minor)),
             Geom::Parabola { f, .. } if *f == 0.0 => Some("parabola.f must be non-zero".into()),
             Geom::Polyline { points } if points.len() < 2 => Some("polyline.points needs at least 2 points".into()),
+            Geom::BsplineCurve { degree, poles, weights, knots, multiplicities, periodic, .. } => {
+                bspline_problem("bspline_curve", *degree, poles.len(), weights, knots, multiplicities, *periodic)
+            }
+            Geom::BsplineSurface {
+                u_degree,
+                v_degree,
+                nu,
+                nv,
+                poles,
+                weights,
+                u_knots,
+                u_multiplicities,
+                v_knots,
+                v_multiplicities,
+                u_periodic,
+                v_periodic,
+                ..
+            } => {
+                if poles.len() != nu * nv {
+                    return Some("bspline_surface.poles must hold nu × nv points".into());
+                }
+                if weights.as_ref().is_some_and(|w| w.len() != poles.len()) {
+                    return Some("bspline_surface.weights must hold one weight per pole".into());
+                }
+                bspline_problem("bspline_surface.u", *u_degree, *nu, &None, u_knots, u_multiplicities, *u_periodic)
+                    .or_else(|| {
+                        bspline_problem(
+                            "bspline_surface.v",
+                            *v_degree,
+                            *nv,
+                            &None,
+                            v_knots,
+                            v_multiplicities,
+                            *v_periodic,
+                        )
+                    })
+            }
             Geom::Points { positions, .. } if positions.is_empty() => Some("points.positions must not be empty".into()),
             Geom::Mesh { vertices, indices } => {
                 let n = vertices.len();
@@ -331,6 +462,14 @@ impl Geom {
                 pair(out, range)
             }
             Geom::Polyline { points } => points.iter().for_each(|p| out.extend(p)),
+            Geom::BsplineCurve { poles, weights, knots, range, .. } => {
+                poles.iter().for_each(|p| out.extend(p));
+                if let Some(w) = weights {
+                    out.extend(w);
+                }
+                out.extend(knots);
+                pair(out, range);
+            }
             Geom::Plane { frame: f, window: w } => {
                 frame(out, f);
                 window(out, w)
@@ -351,6 +490,16 @@ impl Geom {
                 window(out, w)
             }
             Geom::Mesh { vertices, .. } => vertices.iter().for_each(|p| out.extend(p)),
+            Geom::BsplineSurface { poles, weights, u_knots, v_knots, window: w, .. } => {
+                poles.iter().for_each(|p| out.extend(p));
+                if let Some(w8) = weights {
+                    out.extend(w8);
+                }
+                out.extend(u_knots);
+                out.extend(v_knots);
+                window(out, w);
+            }
+            Geom::Box { min, max } => out.extend(min.iter().chain(max)),
             Geom::Point { p } => out.extend(p),
             Geom::Points { positions, size } => {
                 positions.iter().for_each(|p| out.extend(p));
@@ -393,6 +542,17 @@ impl Geom {
                 put_range(&mut put, range);
             }
             Geom::Polyline { points } => put("points", json!(points)),
+            Geom::BsplineCurve { degree, poles, weights, knots, multiplicities, periodic, range } => {
+                put("degree", json!(degree));
+                put("poles", json!(poles));
+                if let Some(w) = weights {
+                    put("weights", json!(w));
+                }
+                put("knots", json!(knots));
+                put("multiplicities", json!(multiplicities));
+                put("periodic", json!(periodic));
+                put_range(&mut put, range);
+            }
             Geom::Plane { frame, window } => {
                 put("frame", frame.to_json());
                 put_window(&mut put, window);
@@ -417,6 +577,41 @@ impl Geom {
             Geom::Mesh { vertices, indices } => {
                 put("vertices", json!(vertices));
                 put("indices", json!(indices));
+            }
+            Geom::BsplineSurface {
+                u_degree,
+                v_degree,
+                nu,
+                nv,
+                poles,
+                weights,
+                u_knots,
+                u_multiplicities,
+                v_knots,
+                v_multiplicities,
+                u_periodic,
+                v_periodic,
+                window,
+            } => {
+                put("u_degree", json!(u_degree));
+                put("v_degree", json!(v_degree));
+                put("nu", json!(nu));
+                put("nv", json!(nv));
+                put("poles", json!(poles));
+                if let Some(w) = weights {
+                    put("weights", json!(w));
+                }
+                put("u_knots", json!(u_knots));
+                put("u_multiplicities", json!(u_multiplicities));
+                put("v_knots", json!(v_knots));
+                put("v_multiplicities", json!(v_multiplicities));
+                put("u_periodic", json!(u_periodic));
+                put("v_periodic", json!(v_periodic));
+                put_window(&mut put, window);
+            }
+            Geom::Box { min, max } => {
+                put("min", json!(min));
+                put("max", json!(max));
             }
             Geom::Point { p } => put("p", json!(p)),
             Geom::Points { positions, size } => {
@@ -450,6 +645,41 @@ fn put_range(put: &mut impl FnMut(&str, Value), range: &Option<[f64; 2]>) {
     if let Some(r) = range {
         put("range", json!(r));
     }
+}
+
+/// Why a B-spline direction is malformed, mirroring the kernel's construction
+/// rules: `n` poles need `sum(mults) - degree - 1` (open) or
+/// `sum(mults) - mults[last]` (periodic).
+fn bspline_problem(
+    what: &str,
+    degree: usize,
+    n: usize,
+    weights: &Option<Vec<f64>>,
+    knots: &[f64],
+    multiplicities: &[u32],
+    periodic: bool,
+) -> Option<String> {
+    if degree < 1 {
+        return Some(format!("{what}.degree must be at least 1"));
+    }
+    if n < 2 {
+        return Some(format!("{what} needs at least 2 poles"));
+    }
+    if weights.as_ref().is_some_and(|w| w.len() != n) {
+        return Some(format!("{what}.weights must hold one weight per pole"));
+    }
+    if weights.as_ref().is_some_and(|w| w.iter().any(|&x| x <= 0.0)) {
+        return Some(format!("{what}.weights must be positive"));
+    }
+    if knots.len() != multiplicities.len() || knots.is_empty() {
+        return Some(format!("{what} needs matching non-empty knots and multiplicities"));
+    }
+    if multiplicities.iter().any(|&m| m < 1) {
+        return Some(format!("{what}.multiplicities must hold at least 1"));
+    }
+    let sum: usize = multiplicities.iter().map(|&m| m as usize).sum();
+    let want = if periodic { sum - multiplicities.last().copied().unwrap_or(0) as usize } else { sum - degree - 1 };
+    (n != want).then(|| format!("{what} holds {n} poles but its knots describe {want}"))
 }
 
 fn put_window(put: &mut impl FnMut(&str, Value), w: &Window) {
@@ -532,6 +762,13 @@ mod tests {
             Geom::polyline(vec![[0.0; 3], [1.0, 0.0, 0.0]]).to_json(),
             json!({"type": "polyline", "points": [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]]})
         );
+        assert_eq!(
+            Geom::bspline_curve(1, vec![[0.0; 3], [1.0, 0.0, 0.0]], None, vec![0.0, 1.0], vec![2, 2], false)
+                .range(0.0, 0.5)
+                .to_json(),
+            json!({"type": "bspline_curve", "degree": 1, "poles": [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
+                   "knots": [0.0, 1.0], "multiplicities": [2, 2], "periodic": false, "range": [0.0, 0.5]})
+        );
     }
 
     #[test]
@@ -549,6 +786,28 @@ mod tests {
         );
         assert_eq!(Geom::sphere(f, 1.0).to_json(), json!({"type": "sphere", "frame": frame, "r": 1.0}));
         assert_eq!(Geom::torus(f, 3.0, 1.0).to_json(), json!({"type": "torus", "frame": frame, "R": 3.0, "r": 1.0}));
+        assert_eq!(
+            Geom::bspline_surface(
+                1,
+                1,
+                2,
+                2,
+                vec![[0.0; 3], [0.0, 1.0, 0.0], [1.0, 0.0, 0.0], [1.0, 1.0, 1.0]],
+                None,
+                vec![0.0, 1.0],
+                vec![2, 2],
+                vec![0.0, 1.0],
+                vec![2, 2],
+                false,
+                false
+            )
+            .to_json(),
+            json!({"type": "bspline_surface", "u_degree": 1, "v_degree": 1, "nu": 2, "nv": 2,
+                   "poles": [[0.0, 0.0, 0.0], [0.0, 1.0, 0.0], [1.0, 0.0, 0.0], [1.0, 1.0, 1.0]],
+                   "u_knots": [0.0, 1.0], "u_multiplicities": [2, 2],
+                   "v_knots": [0.0, 1.0], "v_multiplicities": [2, 2],
+                   "u_periodic": false, "v_periodic": false})
+        );
     }
 
     #[test]
@@ -561,6 +820,10 @@ mod tests {
         assert_eq!(
             Geom::mesh(vec![[0.0; 3], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]], vec![0, 1, 2]).to_json(),
             json!({"type": "mesh", "vertices": [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]], "indices": [0, 1, 2]})
+        );
+        assert_eq!(
+            Geom::bbox([0.0, 0.0, 0.0], [1.0, 2.0, 3.0]).to_json(),
+            json!({"type": "box", "min": [0.0, 0.0, 0.0], "max": [1.0, 2.0, 3.0]})
         );
         assert_eq!(
             Geom::arrow([0.0; 3], [1.0, 0.0, 0.0]).to_json(),
@@ -603,6 +866,48 @@ mod tests {
         assert_eq!(Geom::parabola(F, 0.0).problem().unwrap(), "parabola.f must be non-zero");
         assert!(Geom::polyline(vec![[0.0; 3]]).problem().is_some());
         assert!(Geom::mesh(vec![[0.0; 3]], vec![0, 0, 1]).problem().is_some());
+        assert!(Geom::bbox([0.0; 3], [f64::NAN, 0.0, 0.0]).problem().is_some());
+        assert!(Geom::bbox([0.0; 3], [1.0, 2.0, 3.0]).problem().is_none());
+        let spline = Geom::bspline_curve(
+            3,
+            vec![[0.0; 3], [1.0, 0.0, 0.0], [2.0, 0.0, 0.0], [3.0, 0.0, 0.0]],
+            None,
+            vec![0.0, 1.0],
+            vec![4, 4],
+            false,
+        );
+        assert!(spline.problem().is_none());
+        assert_eq!(
+            Geom::bspline_curve(0, vec![[0.0; 3], [1.0, 0.0, 0.0]], None, vec![0.0, 1.0], vec![2, 2], false)
+                .problem()
+                .unwrap(),
+            "bspline_curve.degree must be at least 1"
+        );
+        assert_eq!(
+            Geom::bspline_curve(1, vec![[0.0; 3], [1.0, 0.0, 0.0]], None, vec![0.0, 1.0], vec![2, 1], false)
+                .problem()
+                .unwrap(),
+            "bspline_curve holds 2 poles but its knots describe 1"
+        );
+        assert_eq!(
+            Geom::bspline_curve(1, vec![[0.0; 3], [1.0, 0.0, 0.0]], Some(vec![1.0]), vec![0.0, 1.0], vec![2, 2], false)
+                .problem()
+                .unwrap(),
+            "bspline_curve.weights must hold one weight per pole"
+        );
+        assert_eq!(
+            Geom::bspline_curve(
+                1,
+                vec![[0.0; 3], [1.0, 0.0, 0.0]],
+                Some(vec![1.0, 0.0]),
+                vec![0.0, 1.0],
+                vec![2, 2],
+                false
+            )
+            .problem()
+            .unwrap(),
+            "bspline_curve.weights must be positive"
+        );
         let bad = Geom::Pcurve { surface: "S".into(), curve: Box::new(Geom::ellipse(F, 2.0, 1.0)) };
         assert_eq!(bad.problem().unwrap(), "a pcurve is a line, circle or polyline in (u, v), got ellipse");
         assert!(Geom::cone(F, 0.5, -1.0).problem().is_none(), "a cone's ref_radius may be negative");

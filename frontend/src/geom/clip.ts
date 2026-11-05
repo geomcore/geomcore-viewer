@@ -1,3 +1,4 @@
+import { directionBounds, flatKnots } from "./bspline";
 import { evalCurve } from "./curves";
 import type { CurveGeom, Range } from "./types";
 import type { Box, Vec3 } from "./vec";
@@ -62,6 +63,12 @@ function crossings(g: CurveGeom, k: Axis, c: number, lo: number, hi: number): nu
         .filter((e) => e > 0)
         .map(Math.log);
     }
+    case "bspline_curve": {
+      // No closed form: cut at the interior knots, so every piece's midpoint
+      // test sees a single span.
+      const [lo, hi] = domain(g);
+      return g.knots.filter((t) => t > lo && t < hi);
+    }
   }
 }
 
@@ -71,6 +78,9 @@ function domain(g: CurveGeom): Range {
   if (g.range) {
     const [a, b] = g.range[0] <= g.range[1] ? g.range : [g.range[1], g.range[0]];
     return closed && b - a > TAU ? [a, a + TAU] : [a, b];
+  }
+  if (g.type === "bspline_curve") {
+    return directionBounds(flatKnots(g.knots, g.multiplicities), g.degree, g.periodic);
   }
   return closed ? [0, TAU] : [-Infinity, Infinity];
 }

@@ -1,20 +1,36 @@
+import type { ArcRotateCamera } from "@babylonjs/core";
 import type { Box } from "../geom/vec";
 
-/** Babylon's default feel (wheelPrecision 3, panningSensibility 1000) at a camera radius of 10. */
-const WHEEL_FEEL = 30;
+/** Panning feel (Babylon default 1000) at a camera radius of 10. */
 const PAN_FEEL = 10000;
+/**
+ * Wheel zoom as a fraction of the current distance: one mouse-wheel notch
+ * travels ~12% of the way, at any depth. (Babylon's default world-unit steps
+ * scaled with the scene instead: a notch ate most of the radius, slammed the
+ * camera into its target, and flipped the view.)
+ */
+export const WHEEL_PERCENTAGE = 0.012;
 
 /**
- * Clip planes and input sensitivity for a scene that fits a camera at `radius`.
- * Babylon's defaults (clip 1 .. 10000) would hide scenes much smaller or larger than ~10 units.
+ * Clip planes, pan feel and zoom limits for a scene that fits a camera at
+ * `radius`. Babylon's defaults (clip 1 .. 10000, unbounded radius) would hide
+ * scenes much smaller or larger than ~10 units, and let a zoom dive through
+ * the target to the other side.
  */
 export function cameraScale(radius: number) {
   return {
     minZ: radius / 1000,
     maxZ: radius * 100,
-    wheelPrecision: WHEEL_FEEL / radius,
     panningSensibility: PAN_FEEL / radius,
+    lowerRadiusLimit: radius / 100,
+    upperRadiusLimit: radius * 100,
   };
+}
+
+/** The wheel input zooms by percentage of the current radius (see WHEEL_PERCENTAGE). */
+export function initWheelZoom(camera: ArcRotateCamera): void {
+  const wheel = camera.inputs.attached.mousewheel as { wheelDeltaPercentage?: number } | undefined;
+  if (wheel) wheel.wheelDeltaPercentage = WHEEL_PERCENTAGE;
 }
 
 export type Snap = "top" | "front" | "right" | "iso";

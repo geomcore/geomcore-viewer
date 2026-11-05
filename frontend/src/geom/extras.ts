@@ -16,7 +16,7 @@ export interface Extras {
  */
 export function curveExtras(g: CurveGeom, wanted: Record<string, unknown>): Extras {
   const out: Extras = { lines: [], points: [] };
-  if (g.type === "line") return out;
+  if (g.type === "line" || g.type === "bspline_curve") return out; // no frame, no conic extras
   const on = (key: string): boolean => Boolean(wanted[key]);
   const f = g.frame;
   const at = (cx: number, cy: number): Vec3 => inFrame(f, cx, cy);

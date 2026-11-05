@@ -1,3 +1,4 @@
+import { directionBounds, evalBsplineSurface, flatKnots } from "./bspline";
 import type { Range, SurfaceGeom } from "./types";
 import { Vec3, inFrame } from "./vec";
 
@@ -22,7 +23,18 @@ export function evalSurface(g: SurfaceGeom, u: number, v: number): Vec3 {
       const rho = g.R + g.r * Math.cos(v);
       return inFrame(g.frame, rho * Math.cos(u), rho * Math.sin(u), g.r * Math.sin(v));
     }
+    case "bspline_surface":
+      return evalBsplineSurface(
+        g.u_degree, g.v_degree, g.nu, g.nv, g.poles, g.weights,
+        g.u_knots, g.u_multiplicities, g.v_knots, g.v_multiplicities,
+        g.u_periodic, g.v_periodic, u, v,
+      );
   }
+}
+
+/** A B-spline direction's domain, from its knots. */
+function bsplineDomain(knots: number[], mults: number[], degree: number, periodic: boolean): Range {
+  return directionBounds(flatKnots(knots, mults), degree, periodic);
 }
 
 /** Full periods of closed parameter directions; null where the surface is infinite. */
@@ -37,10 +49,16 @@ export function naturalWindow(g: SurfaceGeom): { u: Range | null; v: Range | nul
       return { u: [0, TAU], v: [-Math.PI / 2, Math.PI / 2] };
     case "torus":
       return { u: [0, TAU], v: [0, TAU] };
+    case "bspline_surface":
+      // A B-spline patch is finite by construction: its knot domain.
+      return {
+        u: bsplineDomain(g.u_knots, g.u_multiplicities, g.u_degree, g.u_periodic),
+        v: bsplineDomain(g.v_knots, g.v_multiplicities, g.v_degree, g.v_periodic),
+      };
   }
 }
 
-/** The period of each parameter direction that wraps around (2π), null for one that does not. */
+/** The period of each parameter direction that wraps around, null for one that does not. */
 export function periods(g: SurfaceGeom): { u: number | null; v: number | null } {
   switch (g.type) {
     case "plane":
@@ -51,6 +69,11 @@ export function periods(g: SurfaceGeom): { u: number | null; v: number | null } 
       return { u: TAU, v: null };
     case "torus":
       return { u: TAU, v: TAU };
+    case "bspline_surface": {
+      const u = bsplineDomain(g.u_knots, g.u_multiplicities, g.u_degree, g.u_periodic);
+      const v = bsplineDomain(g.v_knots, g.v_multiplicities, g.v_degree, g.v_periodic);
+      return { u: g.u_periodic ? u[1] - u[0] : null, v: g.v_periodic ? v[1] - v[0] : null };
+    }
   }
 }
 

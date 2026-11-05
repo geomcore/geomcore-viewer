@@ -1,0 +1,26 @@
+{
+  "version": 2,
+  "title": "Hidden lines on a torus",
+  "view": "3d",
+  "objects": [
+    {
+      "id": "T",
+      "label": "T",
+      "geom": {"type": "torus", "frame": {"o": [0, 0, 0], "x": [1, 0, 0], "y": [0, 1, 0], "z": [0, 0, 1]}, "R": 3, "r": 1},
+      "style": {"color": "#3b6fd4"},
+      "extras": {"wire": true, "hidden": "dashed", "silhouette": true}
+    },
+    {
+      "id": "core",
+      "label": "core",
+      "geom": {"type": "circle", "frame": {"o": [0, 0, 0], "x": [1, 0, 0], "y": [0, 1, 0], "z": [0, 0, 1]}, "r": 3},
+      "style": {"color": "#d35400"}
+    },
+    {
+      "id": "ring",
+      "label": "ring",
+      "geom": {"type": "circle", "frame": {"o": [0, 0, 0], "x": [1, 0, 0], "y": [0, 1, 0], "z": [0, 0, 1]}, "r": 4.5},
+      "style": {"color": "#2c7a3f"}
+    }
+  ]
+}

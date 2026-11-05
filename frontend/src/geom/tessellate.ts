@@ -6,8 +6,8 @@ import { evalSurface, surfaceWindow } from "./surfaces";
 import type { CurveGeom, Range, SurfaceGeom } from "./types";
 import { Box, Vec3, add, cross, norm, scale, sub } from "./vec";
 
-/** Chord tolerance of the 3D view, as a fraction of the view box's half-size (≈ 0.4 px when the scene fills the pane). */
-export const WORLD_TOL = 5e-4;
+/** Chord tolerance of the 3D view, as a fraction of the view box's half-size (≈ 0.1 px when the scene fills the pane). */
+export const WORLD_TOL = 1.25e-4;
 /** Most segments along one parameter direction of a surface. */
 export const MAX_SEGMENTS = 256;
 /** Fewest segments per full turn of a curved direction, however coarse the tolerance. */
@@ -65,6 +65,10 @@ export function surfaceGrid(g: SurfaceGeom, fallbackHalf: number, tol: number): 
       nu = arcSegments(du, g.R + g.r, tol);
       nv = arcSegments(dv, g.r, tol);
       break;
+    case "bspline_surface":
+      nu = bsplineSegments(g.u_knots, u);
+      nv = bsplineSegments(g.v_knots, v);
+      break;
   }
   return { u, v, nu, nv, assumed };
 }
@@ -100,6 +104,12 @@ export function tessellateSurface(g: SurfaceGeom, grid: SurfaceGrid): TriMesh {
   return { positions, indices, uvs };
 }
 
+/** Segments along a B-spline direction: eight per knot span in the window, within reason. */
+function bsplineSegments(knots: number[], w: Range): number {
+  const spans = knots.filter((k) => k > w[0] && k < w[1]).length + 1;
+  return Math.min(MAX_SEGMENTS, Math.max(16, 8 * spans));
+}
+
 /** Curve of constant u (sampled at the grid's v steps), or of constant v. */
 function isoU(g: SurfaceGeom, grid: SurfaceGrid, u: number): Vec3[] {
   return Array.from({ length: grid.nv + 1 }, (_, j) => evalSurface(g, u, at(grid.v, j / grid.nv)));
@@ -132,4 +142,14 @@ export function arrowPolylines(at: Vec3, vec: Vec3): Vec3[][] {
   const sideUnit = scale(side, (0.08 * length) / norm(side));
   const back = sub(tip, scale(dir, 0.15 * length));
   return [[at, tip], [tip, add(back, sideUnit)], [tip, sub(back, sideUnit)]];
+}
+
+/** An axis-aligned box's twelve edges, as two-point paths (either corner may be the smaller one). */
+export function boxEdges(a: Vec3, b: Vec3): Vec3[][] {
+  const lo: Vec3 = [Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.min(a[2], b[2])];
+  const hi: Vec3 = [Math.max(a[0], b[0]), Math.max(a[1], b[1]), Math.max(a[2], b[2])];
+  const c = (x: number, y: number, z: number): Vec3 => [x ? hi[0] : lo[0], y ? hi[1] : lo[1], z ? hi[2] : lo[2]];
+  const corners = [c(0, 0, 0), c(1, 0, 0), c(1, 1, 0), c(0, 1, 0), c(0, 0, 1), c(1, 0, 1), c(1, 1, 1), c(0, 1, 1)];
+  const edges = [[0, 1], [1, 2], [2, 3], [3, 0], [4, 5], [5, 6], [6, 7], [7, 4], [0, 4], [1, 5], [2, 6], [3, 7]];
+  return edges.map(([i, j]) => [corners[i], corners[j]]);
 }

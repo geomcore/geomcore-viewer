@@ -542,6 +542,7 @@ fn scene_extent<'a>(geoms: impl Iterator<Item = &'a Geom>) -> f64 {
             Geom::Torus { frame, major, minor, .. } => norm(frame.o) + major + minor,
             Geom::Polyline { points } => points.iter().map(|p| norm(*p)).fold(0.0, f64::max),
             Geom::Mesh { vertices, .. } => vertices.iter().map(|p| norm(*p)).fold(0.0, f64::max),
+            Geom::Box { min, max } => norm(*min).max(norm(*max)),
             _ => 0.0,
         });
     }
@@ -873,6 +874,30 @@ mod tests {
         v.add_all(Vec::<Geom>::new(), o().label("note")).unwrap();
         v.pcurve(Geom::line([0.0, 1.0, 0.0], [1.0, 0.0, 0.0]), &cyl, o().label("pcurve line")).unwrap();
         v.pcurve(Geom::circle(Frame::at([1.0, 0.0, 0.0]), 0.5), &cyl, o().label("pcurve circle")).unwrap();
+        v.add(Geom::bbox([0.0, 0.0, 0.0], [1.0, 2.0, 3.0]), o().label("box")).unwrap();
+        v.add(
+            Geom::bspline_curve(1, vec![[0.0; 3], [1.0, 2.0, 0.0]], None, vec![0.0, 1.0], vec![2, 2], false),
+            o().label("bspline curve"),
+        )
+        .unwrap();
+        v.add(
+            Geom::bspline_surface(
+                1,
+                1,
+                2,
+                2,
+                vec![[0.0; 3], [0.0, 1.0, 0.0], [1.0, 0.0, 0.0], [1.0, 1.0, 1.0]],
+                None,
+                vec![0.0, 1.0],
+                vec![2, 2],
+                vec![0.0, 1.0],
+                vec![2, 2],
+                false,
+                false,
+            ),
+            o().label("bspline surface"),
+        )
+        .unwrap();
         let mut doc = v.scene();
         doc["run"] = json!("fixture");
         let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/scene.json");

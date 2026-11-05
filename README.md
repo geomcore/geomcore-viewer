@@ -53,17 +53,31 @@ from this repo, as in the Development section).
 | Call | Does |
 |---|---|
 | `gv.Viewer(title, view="auto"\|"2d"\|"3d", keep=False)` | a scene (new run) |
-| `view.add(*objs, label=, group=, color=, width=, dashed=, opacity=, u=, v=, foci=, asymptotes=, …)` | show objects → `Handle` / list |
+| `view.add(*objs, label=, group=, color=, width=, dashed=, opacity=, u=, v=, resolution=, foci=, asymptotes=, …)` | show objects → `Handle` / list |
 | `handle.update(color=…)`, `handle.remove()` | change or remove one object |
-| `view.pcurve(curve, on=surface)` | a `Line2D`, `Circle2D` (e.g. `circle.parametrize_on(cyl)`) or `(u, v)` pairs drawn on a surface already added |
-| `view.polyline(pts)`, `view.mesh(v, i)`, `view.arrow(at, vec)`, `view.text(at, s)` | raw geometry |
+| `view.pcurve(curve, on=surface)` | a `Line2D`, `Circle2D`, `TrimmedCurve2D` of those (e.g. `circle.parametrize_on(cyl)`) or `(u, v)` pairs drawn on an exact surface already added (a baked `mesh` has no `(u, v)` parameters) |
+| `view.polyline(pts)`, `view.mesh(v, i)`, `view.box(min, max)`, `view.arrow(at, vec)`, `view.text(at, s)` | raw geometry |
 | `view.clear()`, `view.save(path)`, `view.open()` | housekeeping |
 | `gv.add(...)`, `gv.clear()` | same, on the most recent viewer (handy in `pdb`) |
 | `geomcore-viewer serve` / `geomcore-viewer stop` | run / stop the server by hand |
 
+`add` takes analytic curves and surfaces, `TrimmedCurve3D`/`TrimmedCurve2D`
+(segments, arcs and conic pieces stay exact via `range`), `BoundingBox3D`
+(drawn as its twelve edges), and B-splines — sent exact (degree, poles,
+weights, knots, multiplicities) and evaluated in the page, so trimmed
+B-spline pieces keep their `range` and the display refines with the zoom.
+It also takes points, intersection results and lists of those.
+
+Surfaces take `isolines=`, `wire=`, `hidden="dashed"` (lines behind the
+surface drawn dashed and faint, as in a textbook figure) and `silhouette=True`
+(the outline from the camera). geomcore's iso curves (`S.u_iso(u)`,
+`S.v_iso(v)`, geomcore ≥ 0.33.1) are ordinary exact curves; one that
+collapses to a point (a pole, an apex) arrives as a point.
+
 Default windows for infinite surfaces (planes, cylinders, cones) are computed
 from the objects already added, so add the finite objects first or pass `u=`
-and `v=`.
+and `v=`. A `BSplineSurface` draws its knot domain unless `u=`/`v=` narrows it
+to a sub-region.
 
 The server listens on `http://127.0.0.1:8765` by default. If that port is
 busy, set `GEOMCORE_VIEWER_URL=http://127.0.0.1:<other port>` (every script
@@ -167,7 +181,7 @@ go straight to `add`. Rust never starts the server: run
 | `python/geomcore_viewer/` | client (`viewer.py`), geomcore adapter (`adapt.py`), server (`server.py`, `spawn.py`) |
 | `frontend/` | Vite + TypeScript viewer (Babylon.js 3D, PixiJS 2D); `src/geom/` is the evaluator core, `src/view2d/` the plane view, `src/view3d/` the 3D view, `src/viewuv/` the (u,v) pane |
 | `clients/rust/` | Rust client: `Viewer`, `Geom`, geomcore conversions behind the `geomcore` feature ([README](clients/rust/README.md)) |
-| `examples/` | `conics_2d.py`, `quadrics_3d.py`, `pcurve.py` (each takes `--save <file>`); Rust: `clients/rust/examples/` |
+| `examples/` | `conics_2d.py`, `quadrics_3d.py`, `pcurve.py`, `bspline.py` (each takes `--save <file>`); Rust: `clients/rust/examples/` |
 
 ## Development
 

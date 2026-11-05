@@ -118,3 +118,74 @@ test("selecting a surface shows it in the (u,v) pane", async ({ page, request })
   await page.keyboard.press("Escape");
   await expect(page.locator(".uvpane")).toBeHidden();
 });
+
+test("the B-spline scene renders exact curves, patch, pcurve and box", async ({ page, request }) => {
+  await postScene(request, "bspline");
+  await page.goto("/");
+  await expect(page.locator("#stage")).toHaveAttribute("data-view", "3d");
+  await expect(page.locator("#count")).toHaveText("6 objects");
+  await expect.poll(() => pixelsLike(page, "#00798c")).toBeGreaterThan(100); // the trimmed piece
+  await expect(page.locator(".uvpane")).toBeVisible(); // the diag pcurve's surface
+  await expect(page.locator(".uvpane .uv-title")).toHaveText("patch · bspline_surface (u, v)");
+});
+
+test("wheel zoom is gentle, proportional, and never dives through the target", async ({ page, request }) => {
+  await postScene(request, "quadrics_3d");
+  await page.goto("/");
+  await page.waitForTimeout(800); // let auto-fit land first
+  const state = () => page.evaluate(() => {
+    const c = (window as unknown as { __gv: { view3d: { cameraState: { alpha: number; radius: number } } } })
+      .__gv.view3d.cameraState;
+    return { alpha: c.alpha, radius: c.radius };
+  });
+  const before = await state();
+  await page.mouse.move(640, 400);
+  await page.mouse.wheel(0, -120); // one notch in
+  await page.waitForTimeout(1200); // let inertia settle
+  const after = await state();
+  const ratio = after.radius / before.radius;
+  expect(ratio).toBeGreaterThan(0.8); // ~12% closer, not a collapse
+  expect(ratio).toBeLessThan(0.97);
+  for (let i = 0; i < 14; i++) {
+    await page.mouse.wheel(0, -240); // keep diving
+    await page.waitForTimeout(250);
+  }
+  const deep = await state();
+  expect(deep.radius).toBeGreaterThan(0); // clamped above the target: no flip to the far side
+  expect(deep.alpha).toBeCloseTo(before.alpha, 6);
+});
+
+test("a hidden torus dashes and fades what it hides, and only that", async ({ page, request }) => {
+  await postScene(request, "hidden_lines");
+  await page.goto("/");
+  await expect(page.locator("#count")).toHaveText("3 objects");
+  // The core circle runs inside the tube: never seen, only its faint dashes (#d35400 towards the background, at 0.6).
+  await expect.poll(() => pixelsLike(page, "#ebc2a8")).toBeGreaterThan(100);
+  expect(await pixelsLike(page, "#d35400")).toBeLessThan(20);
+  // The outer ring is in front of the torus over half its turn: solid there.
+  await expect.poll(() => pixelsLike(page, "#2c7a3f")).toBeGreaterThan(100);
+  // The torus's own front isolines and silhouette stay solid.
+  await expect.poll(() => pixelsLike(page, "#3b6fd4")).toBeGreaterThan(100);
+
+  // A torus switched off in the panel hides nothing; switched back on, it does again.
+  const torus = page.locator('li.object[data-id="T"] input[type="checkbox"]');
+  await torus.uncheck();
+  await expect.poll(() => pixelsLike(page, "#d35400")).toBeGreaterThan(100);
+  await torus.check();
+  await expect.poll(() => pixelsLike(page, "#d35400")).toBeLessThan(20);
+
+  // `"hide"` drops what is behind: the core circle is gone, neither solid nor faint. The faint
+  // count never reaches 0 (the red axis's antialiasing is close), so compare it with the dashed one.
+  const dashed = await pixelsLike(page, "#ebc2a8");
+  const doc = JSON.parse(readFileSync(new URL("./scenes/hidden_lines.json", import.meta.url), "utf8"));
+  doc.objects[0].extras = { wire: true, hidden: "hide" };
+  expect((await request.post("/api/objects", { data: { objects: [doc.objects[0]] } })).ok()).toBe(true);
+  await expect.poll(() => pixelsLike(page, "#ebc2a8")).toBeLessThan(dashed - 300);
+  expect(await pixelsLike(page, "#d35400")).toBeLessThan(20);
+  await expect.poll(() => pixelsLike(page, "#2c7a3f")).toBeGreaterThan(100);
+
+  // Without `hidden`, the wireframe hides nothing: the core circle is solid again.
+  doc.objects[0].extras = { wire: true };
+  expect((await request.post("/api/objects", { data: { objects: [doc.objects[0]] } })).ok()).toBe(true);
+  await expect.poll(() => pixelsLike(page, "#d35400")).toBeGreaterThan(100);
+});

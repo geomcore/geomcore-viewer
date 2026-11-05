@@ -22,3 +22,4 @@ print(f"{sys.argv[3]}: {count} objects arrived")' "$2" "$3" "$1"
 
 check conics "Conics and their intersections" 12
 check pcurve "A circle on a cylinder" 3
+check bspline "Exact B-splines" 6

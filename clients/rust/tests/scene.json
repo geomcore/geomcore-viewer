@@ -597,6 +597,112 @@
       "style": {
         "color": "#00798c"
       }
+    },
+    {
+      "geom": {
+        "max": [
+          1.0,
+          2.0,
+          3.0
+        ],
+        "min": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "type": "box"
+      },
+      "id": "box",
+      "label": "box",
+      "style": {
+        "color": "#c47f00"
+      }
+    },
+    {
+      "geom": {
+        "degree": 1,
+        "knots": [
+          0.0,
+          1.0
+        ],
+        "multiplicities": [
+          2,
+          2
+        ],
+        "periodic": false,
+        "poles": [
+          [
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            2.0,
+            0.0
+          ]
+        ],
+        "type": "bspline_curve"
+      },
+      "id": "bspline curve",
+      "label": "bspline curve",
+      "style": {
+        "color": "#3a7cc2"
+      }
+    },
+    {
+      "geom": {
+        "nu": 2,
+        "nv": 2,
+        "poles": [
+          [
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            1.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            1.0,
+            1.0
+          ]
+        ],
+        "type": "bspline_surface",
+        "u_degree": 1,
+        "u_knots": [
+          0.0,
+          1.0
+        ],
+        "u_multiplicities": [
+          2,
+          2
+        ],
+        "u_periodic": false,
+        "v_degree": 1,
+        "v_knots": [
+          0.0,
+          1.0
+        ],
+        "v_multiplicities": [
+          2,
+          2
+        ],
+        "v_periodic": false
+      },
+      "id": "bspline surface",
+      "label": "bspline surface",
+      "style": {
+        "color": "#8a5cc2"
+      }
     }
   ],
   "run": "fixture",

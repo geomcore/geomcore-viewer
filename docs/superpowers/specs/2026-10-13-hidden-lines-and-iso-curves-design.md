@@ -60,7 +60,8 @@ The docs torus is
 
 Clients send a degenerate iso curve as a `point`: a `circle` of radius 0
 (apex, pole, pinch) at its center, a `bspline_curve` whose poles all
-coincide at that pole. Radii stay strictly positive on the wire.
+coincide at that pole. "0" means at most `1e-12 × max(1, |centre|)` (a
+sphere's pole comes out at ~6e-17). Radii stay strictly positive on the wire.
 
 ## 3. Frontend
 
@@ -119,8 +120,8 @@ silhouette(g: SurfaceGeom, grid: SurfaceGrid, eye: Vec3, tol: number): Vec3[][]
    `f(u, v) = (S_u × S_v) · (S(u, v) − eye)`, the partials by central
    differences of `evalSurface`.
 2. Marching squares on the sign of `f`; an ambiguous cell takes the sign of
-   its centre. Cells where `|S_u × S_v|` is below `1e-12 ×` its grid maximum
-   (a pole, an apex) are skipped.
+   its centre. Where the normal degenerates (`|S_u × S_v| ≤ 1e-9 (|S_u| + |S_v|)²`:
+   a pole, an apex) it is taken a hair (1e-4 of the window) inside instead.
 3. Each edge crossing is refined by bisection on the exact `f` until the
    points move less than `tol`.
 4. Crossings are chained into polylines across cells (and across the seam of

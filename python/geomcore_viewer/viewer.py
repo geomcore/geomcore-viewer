@@ -18,7 +18,7 @@ from .spawn import ensure_server, probe, refused_hint
 # Categorical palette: every colour has contrast ≥ 3:1 on the viewer's light (#f7f8fa) and
 # dark (#16181d) backgrounds (spec §3.5, tests/test_viewer.py), so it reads on a projector.
 STYLE_KEYS = ("color", "width", "dashed", "opacity")
-EXTRA_KEYS = frozenset({"foci", "center", "axes", "asymptotes", "directrix", "vertex", "isolines", "wire"})
+EXTRA_KEYS = frozenset({"foci", "center", "axes", "asymptotes", "directrix", "vertex", "isolines", "wire", "hidden", "silhouette"})
 VIEWS = ("auto", "2d", "3d")
 
 _default: Viewer | None = None
@@ -94,28 +94,34 @@ class Viewer:
         _default = self
 
     # -- adding ------------------------------------------------------------
-    def add(self, *objs, label: str | None = None, group: str | None = None, u=None, v=None, **options):
+    def add(self, *objs, label: str | None = None, group: str | None = None, u=None, v=None, resolution: int | None = None, **options):
         """Show geomcore objects, intersection results, points, or lists of them.
 
         Style: ``color``, ``width``, ``dashed``, ``opacity``. Curve extras:
         ``foci``, ``center``, ``axes``, ``asymptotes``, ``directrix``,
-        ``vertex``; surface extras ``isolines``, ``wire``; ``u=``/``v=``
-        set a surface's parameter window. Re-adding a ``label`` replaces
-        what that label showed before.
+        ``vertex``; surface extras ``isolines``, ``wire``, ``hidden``
+        (``"dashed"`` or ``"hide"``: what becomes of lines behind it) and
+        ``silhouette``; ``u=``/``v=`` set a surface's parameter window; ``resolution=`` sets the sampled
+        fallback density (curve segments, surface grid N×N) on bindings
+        without B-spline getters — exact geometry ignores it. Re-adding a
+        ``label`` replaces what that label showed before.
         """
         if not objs:
             raise TypeError("add() needs at least one object")
         parts: list[dict] = []
         for i, obj in enumerate(objs, start=1):
             part_label = label if len(objs) == 1 or label is None else indexed(label, i)
-            parts += to_objects(obj, part_label, u=u, v=v)
+            parts += to_objects(obj, part_label, u=u, v=v, resolution=resolution)
         return self._commit(parts, label, group, options, u, v)
 
     def pcurve(self, curve, on, *, label: str | None = None, group: str | None = None, **options):
-        """Show a curve given in a surface's (u, v) parameters: a geomcore ``Line2D`` or
-        ``Circle2D`` (e.g. ``circle.parametrize_on(surface)``) or a sequence of ``(u, v)``
-        pairs. ``on`` is the surface, already added: its :class:`Handle` or id. The page
-        draws the curve on the surface in 3D and in the (u,v) pane.
+        """Show a curve given in a surface's (u, v) parameters: a geomcore ``Line2D``,
+        ``Circle2D`` or ``TrimmedCurve2D`` of those (e.g. ``circle.parametrize_on(surface)``)
+        or a sequence of ``(u, v)`` pairs. ``on`` is the surface, already added: its
+        :class:`Handle` or id. The surface must be exact (plane, cylinder, cone, sphere,
+        torus or ``BSplineSurface``) — a baked ``mesh`` has no (u, v) parametrization
+        for the page to evaluate. The page draws the curve on the
+        surface in 3D and in the (u,v) pane.
         """
         surface = on.id if isinstance(on, Handle) else on
         if self.objects.get(surface, {}).get("geom", {}).get("type") not in SURFACE_TYPES:
@@ -129,6 +135,12 @@ class Viewer:
 
     def mesh(self, vertices, indices, *, label: str | None = None, group: str | None = None, **options):
         geom = {"type": "mesh", "vertices": [as_vec(p) for p in vertices], "indices": [int(i) for i in indices]}
+        return self._commit([{"label": label, "geom": geom}], label, group, options)
+
+    def box(self, minimum, maximum, *, label: str | None = None, group: str | None = None, **options):
+        """Show an axis-aligned box (e.g. a geomcore ``BoundingBox3D`` — ``add`` takes
+        one directly — or two corners): the page draws its twelve edges."""
+        geom = {"type": "box", "min": as_vec(minimum), "max": as_vec(maximum)}
         return self._commit([{"label": label, "geom": geom}], label, group, options)
 
     def arrow(self, at, vec, *, label: str | None = None, group: str | None = None, **options):
