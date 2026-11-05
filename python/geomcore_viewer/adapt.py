@@ -30,13 +30,19 @@ _BOUND_DEFAULT = 100.0
 _WINDOW_MIN_HALF_SIZE = 1.0
 _WINDOW_DISTANCE_FACTOR = 1.5
 
-CURVES = frozenset({"Line3D", "Line2D", "Circle3D", "Circle2D", "Ellipse3D", "Parabola3D", "Hyperbola3D"})
+CURVES = frozenset({"Line3D", "Line2D", "Circle3D", "Circle2D", "Ellipse3D", "Ellipse2D", "Parabola3D",
+                   "Parabola2D", "Hyperbola3D", "Hyperbola2D"})
 SURFACES = frozenset({"Plane", "Cylinder", "Cone", "Sphere", "Torus"})
 POINTS = frozenset({"Point3D", "Point2D"})
-SAMPLED = frozenset({"BSplineCurve3D", "BSplineSurface"})
+# Curves with no protocol type of their own, sampled over their bounds: B-splines and Béziers.
+SAMPLED_CURVES = frozenset({"BSplineCurve3D", "BSplineCurve2D", "BezierCurve", "BezierCurve2D"})
+# Surfaces the protocol has no exact type for, sampled into a mesh over their u/v bounds.
+SAMPLED_SURFACES = frozenset({"BSplineSurface", "BezierSurface"})
+# Surfaces sent exactly from their profile curve (protocol `extrusion` / `revolution`).
+PROFILE_SURFACES = frozenset({"ExtrusionSurface", "RevolutionSurface"})
 TRIMMED_CURVES = frozenset({"TrimmedCurve3D", "TrimmedCurve2D"})
-GEOMETRY = CURVES | SURFACES | POINTS | SAMPLED | TRIMMED_CURVES
-SURFACE_TYPES = frozenset({"plane", "cylinder", "cone", "sphere", "torus"})
+GEOMETRY = CURVES | SURFACES | POINTS | SAMPLED_CURVES | SAMPLED_SURFACES | PROFILE_SURFACES | TRIMMED_CURVES
+SURFACE_TYPES = frozenset({"plane", "cylinder", "cone", "sphere", "torus", "extrusion", "revolution"})
 
 # geomcore 0.39 renamed the 3D classes (the suffix moved to the 2D ones) and 0.43 removed the
 # old names. The adapter dispatches on the old ones, so current names map back before the
@@ -74,8 +80,11 @@ _FULL_PERIOD = {
     "cone": {"u": [0.0, TAU]},
     "sphere": {"u": [0.0, TAU], "v": [-math.pi / 2, math.pi / 2]},
     "torus": {"u": [0.0, TAU], "v": [0.0, TAU]},
+    "extrusion": {},
+    "revolution": {"u": [0.0, TAU]},
 }
-_INFINITE = {"plane": ("u", "v"), "cylinder": ("v",), "cone": ("v",), "sphere": (), "torus": ()}
+_INFINITE = {"plane": ("u", "v"), "cylinder": ("v",), "cone": ("v",), "sphere": (), "torus": (),
+             "extrusion": ("u", "v"), "revolution": ("v",)}
 
 _SUBSCRIPTS = str.maketrans("0123456789", "₀₁₂₃₄₅₆₇₈₉")
 
@@ -156,6 +165,10 @@ def eval_curve(g: dict, t: float) -> list[float]:
     kind = g["type"]
     if kind == "line":
         return _add(g["o"], _mul(g["d"], t))
+    if kind == "polyline":
+        points = g["points"]
+        i = min(max(int(math.floor(t)), 0), len(points) - 2)
+        return _add(points[i], _mul(_sub(points[i + 1], points[i]), t - i))
     f = g["frame"]
     if kind == "circle":
         return _in_frame(f, g["r"] * math.cos(t), g["r"] * math.sin(t))
@@ -168,8 +181,23 @@ def eval_curve(g: dict, t: float) -> list[float]:
     raise ValueError(f"not a curve: {kind}")
 
 
+def _rotate_about(p: list[float], origin: list[float], axis: list[float], angle: float) -> list[float]:
+    """Rodrigues: rotate ``p`` about the line through ``origin`` along ``axis`` by ``angle``."""
+    x, y, z = _unit(axis)
+    w = _sub(p, origin)
+    c, s = math.cos(angle), math.sin(angle)
+    dot = x * w[0] + y * w[1] + z * w[2]
+    cross_ = [y * w[2] - z * w[1], z * w[0] - x * w[2], x * w[1] - y * w[0]]
+    return _add(origin, _add(_mul(w, c), _add(_mul(cross_, s), _mul([x, y, z], dot * (1.0 - c)))))
+
+
 def eval_surface(g: dict, u: float, v: float) -> list[float]:
-    kind, f = g["type"], g["frame"]
+    kind = g["type"]
+    if kind == "extrusion":
+        return _add(eval_curve(g["profile"], u), _mul(g["direction"], v))
+    if kind == "revolution":  # u is the angle, v the profile's parameter (geomcore's convention)
+        return _rotate_about(eval_curve(g["profile"], v), g["origin"], g["direction"], u)
+    f = g["frame"]
     if kind == "plane":
         return _in_frame(f, u, v)
     if kind == "cylinder":
@@ -208,17 +236,17 @@ def _curve_geom(obj, name: str) -> dict:
         # A (u, v) circle may run clockwise (parametrize_on a circle facing away): its frame's z is then −z.
         z = as_vec(obj.normal()) if name == "Circle3D" else _cross(x, _sub(P(math.pi / 2), o))
         return {"type": "circle", "frame": _frame(o, x, z), "r": float(obj.radius())}
-    if name == "Ellipse3D":
+    if name in ("Ellipse3D", "Ellipse2D"):
         o = as_vec(obj.center())
         x, y = _sub(P(0.0), o), _sub(P(math.pi / 2), o)
         return {"type": "ellipse", "frame": _frame(o, x, _cross(x, y)),
                 "a": float(obj.major_radius()), "b": float(obj.minor_radius())}
-    if name == "Hyperbola3D":
+    if name in ("Hyperbola3D", "Hyperbola2D"):
         o = as_vec(obj.center())
         x, y = _sub(P(0.0), o), _sub(P(1.0), P(-1.0))
         return {"type": "hyperbola", "frame": _frame(o, x, _cross(x, y)),
                 "a": float(obj.major_radius()), "b": float(obj.minor_radius())}
-    if name == "Parabola3D":
+    if name in ("Parabola3D", "Parabola2D"):
         o, focal = P(0.0), float(obj.focal())
         x = _mul(_sub(_add(P(1.0), P(-1.0)), _mul(o, 2.0)), focal)  # = x/2 whatever the sign of f
         y = _sub(P(1.0), P(-1.0))
@@ -269,6 +297,39 @@ def _sampled_bounds(obj, direction: str) -> tuple[float, float]:
     return (t0 if math.isfinite(t0) else -_BOUND_DEFAULT, t1 if math.isfinite(t1) else _BOUND_DEFAULT)
 
 
+def _curve_bounds(obj) -> tuple[float, float]:
+    """A curve's parameter bounds, with a non-finite one clamped to ±[``_BOUND_DEFAULT``]."""
+    t0, t1 = obj.bounds()
+    return (t0 if math.isfinite(t0) else -_BOUND_DEFAULT, t1 if math.isfinite(t1) else _BOUND_DEFAULT)
+
+
+def _profile_surface_geom(obj, name: str) -> dict:
+    """An extrusion or revolution, sent exactly as its profile curve plus the sweep: the protocol
+    evaluates the profile, so the surface follows it exactly. A bounded profile contributes its
+    parameter window for ``u`` (geometry sampled into a polyline is in index space)."""
+    [profile] = _single(obj.profile(), None, None, None)
+    if name == "ExtrusionSurface":
+        geom = {"type": "extrusion", "profile": profile["geom"], "direction": as_vec(obj.direction())}
+    else:
+        axis = obj.axis()
+        geom = {"type": "revolution", "profile": profile["geom"],
+                "origin": as_vec(axis.origin()), "direction": as_vec(axis.direction())}
+    profile_window = _curve_window(profile["geom"])
+    if profile_window is not None:
+        # u is the profile's parameter for an extrusion, v for a revolution.
+        geom["window"] = {"u" if name == "ExtrusionSurface" else "v": list(profile_window)}
+    return geom
+
+
+def _curve_window(geom: dict) -> tuple[float, float] | None:
+    """The finite parameter interval of a curve geom, or None when its parameter runs forever."""
+    if geom["type"] == "polyline":
+        return (0.0, float(len(geom["points"]) - 1))
+    if geom["type"] in ("circle", "ellipse"):
+        return (0.0, TAU)
+    return None
+
+
 def _single(obj, label: str | None, u, v) -> list[dict]:
     name = _name(obj)
     if name in POINTS:
@@ -279,17 +340,20 @@ def _single(obj, label: str | None, u, v) -> list[dict]:
     elif name in SURFACES:
         geom = _surface_geom(obj, name)
         _check(name, as_vec(obj.eval_point(*_CHECK_UV)), eval_surface(geom, *_CHECK_UV))
-    elif name == "BSplineCurve3D":
-        t0, t1 = obj.bounds()
+    elif name in SAMPLED_CURVES:
+        t0, t1 = _curve_bounds(obj)
         geom = {"type": "polyline", "points": sample_curve(obj.eval_point, t0, t1, _BSPLINE_SEGMENTS)}
     elif name in TRIMMED_CURVES:
         geom = _sampled_range(obj, *obj.bounds())["geom"]
-    elif name == "BSplineSurface":
+    elif name in SAMPLED_SURFACES:
         bounds_u = u if u is not None else _sampled_bounds(obj, "u")
         bounds_v = v if v is not None else _sampled_bounds(obj, "v")
         vertices, indices = sample_surface_grid(obj.eval_point, bounds_u[0], bounds_u[1], bounds_v[0], bounds_v[1],
                                                 _BSPLINE_GRID, _BSPLINE_GRID)
         geom = {"type": "mesh", "vertices": vertices, "indices": indices}
+    elif name in PROFILE_SURFACES:
+        geom = _profile_surface_geom(obj, name)
+        _check(name, as_vec(obj.eval_point(*_CHECK_UV)), eval_surface(geom, *_CHECK_UV))
     else:
         raise TypeError(name)
     return [{"label": label, "geom": geom, "source": name}]
@@ -431,6 +495,11 @@ CURVE_PROJECTIONS = frozenset({"CurveProjection", "CurveProjection2D"})
 PROJECTIONS = CURVE_PROJECTIONS | {"SurfaceProjection"}
 
 
+def _kind_name(name: str) -> str:
+    """A class name as its protocol surface kind (`Plane` → `plane`, `ExtrusionSurface` → `extrusion`)."""
+    return {"ExtrusionSurface": "extrusion", "RevolutionSurface": "revolution"}.get(name, name.lower())
+
+
 def _surface_window_bounds(name: str, result, u, v) -> tuple[tuple | None, tuple | None, float]:
     """Parameter bounds around the closest point for the directions that need them, and the
     half-size used for them. Sampled surfaces need both directions; analytic ones only the
@@ -438,7 +507,18 @@ def _surface_window_bounds(name: str, result, u, v) -> tuple[tuple | None, tuple
     half = max(_WINDOW_MIN_HALF_SIZE, _WINDOW_DISTANCE_FACTOR * float(result.distance))
     bounds_u = u if u is not None else (result.u - half, result.u + half)
     bounds_v = v if v is not None else (result.v - half, result.v + half)
-    if name == "BSplineSurface":
+    if name in SAMPLED_SURFACES:
+        return bounds_u, bounds_v, half
+    if name in PROFILE_SURFACES:
+        # The profile's direction keeps its own window instead of a window around the closest point
+        # (u for an extrusion, v for a revolution).
+        [target] = _single(result.target, None, None, None)
+        direction = "u" if name == "ExtrusionSurface" else "v"
+        profile_window = (target["geom"].get("window") or {}).get(direction)
+        if direction == "u":
+            bounds_u = tuple(profile_window) if u is None and profile_window is not None else bounds_u
+        else:
+            bounds_v = tuple(profile_window) if v is None and profile_window is not None else bounds_v
         return bounds_u, bounds_v, half
     infinite = _INFINITE.get(name.lower(), ())
     return (bounds_u if "u" in infinite or u is not None else None), (
@@ -458,7 +538,7 @@ def _projection(result, label: str | None, u=None, v=None) -> list[dict]:
         name = _name(result.target)
         bounds_u, bounds_v, half = _surface_window_bounds(name, result, u, v)
         [target] = _single(result.target, None, bounds_u, bounds_v)
-        if name in _INFINITE or name.lower() in _INFINITE:
+        if _kind_name(name) in _INFINITE:
             target["geom"] = with_window(target["geom"], half, bounds_u, bounds_v)
         params = [result.u, result.v]
     else:
@@ -511,6 +591,8 @@ def _geometry_reference_points(geom: dict) -> list[list[float]]:
         return [eval_curve(geom, TAU * i / _SAMPLES_AROUND) for i in range(_SAMPLES_AROUND)]
     if kind in ("parabola", "hyperbola"):
         return [eval_curve(geom, 0.0)]
+    if kind in ("extrusion", "revolution"):
+        return _geometry_reference_points(geom["profile"])
     if kind in ("sphere", "torus"):
         low, high = _FULL_PERIOD[kind]["v"]
         return [eval_surface(geom, TAU * i / _SAMPLES_AROUND, low + (high - low) * j / 4)
@@ -525,7 +607,8 @@ def _operand_window(operand, reference_points, user_u, user_v) -> tuple[tuple | 
     or a fixed half-size when there is nothing to project. Independent of anything else in the scene.
     A user's ``u`` / ``v`` wins.
     """
-    kind = _name(operand).lower()
+    name = _name(operand)
+    kind = _kind_name(name)
     point_class = type(operand.eval_point(0.0, 0.0))
     step = max(1, math.ceil(len(reference_points) / _REFERENCE_POINT_LIMIT))
     projections = [operand.project_point(point_class(*p)) for p in reference_points[::step]]
@@ -556,8 +639,10 @@ def _operands(result, label: str, reference_points: list, u, v) -> list[dict]:
         if not _INFINITE.get(part["geom"]["type"]):
             points += _geometry_reference_points(part["geom"])
     for obj, part in zip(operands, parts):
-        if _INFINITE.get(part["geom"]["type"]) and "window" not in part["geom"]:
-            bounds_u, bounds_v = _operand_window(obj, points, u, v)
+        if _infinite_directions(part["geom"]):
+            existing = part["geom"].get("window") or {}
+            bounds_u, bounds_v = _operand_window(obj, points, u if u is not None else existing.get("u"),
+                                                 v if v is not None else existing.get("v"))
             part["geom"] = with_window(part["geom"], _WINDOW_DEFAULT_HALF_SIZE, bounds_u, bounds_v)
     return parts
 
@@ -574,7 +659,7 @@ def _curve_operand(result):
     curve = getattr(result, "curve", None)
     if curve is not None:
         return curve
-    first_is_surface = _name(result.first) in SURFACES | {"BSplineSurface"}
+    first_is_surface = _name(result.first) in SURFACES | SAMPLED_SURFACES | PROFILE_SURFACES
     return result.second if first_is_surface else result.first
 
 
@@ -749,16 +834,36 @@ def scene_extent(geoms: Iterable[dict]) -> float:
             reach = max([reach, *(math.hypot(*p) for p in g["points"])])
         elif kind == "mesh":
             reach = max([reach, *(math.hypot(*p) for p in g["vertices"])])
+        elif kind in ("extrusion", "revolution"):
+            reach = max([reach, *(math.hypot(*p) for p in _geometry_reference_points(g))])
     return 1.5 * reach if reach > 0.0 else 5.0
 
 
+def _infinite_directions(geom: dict) -> tuple[str, ...]:
+    """Parameter directions that run forever and that the geometry does not already window
+    (an extrusion keeps its profile's ``u`` window; its sweep still needs one)."""
+    kind = geom["type"]
+    if kind not in _INFINITE:
+        return ()
+    windowed = geom.get("window") or {}
+    return tuple(d for d in _INFINITE[kind] if d not in windowed)
+
+
+def missing_window(geom: dict) -> bool:
+    """True when a surface still needs an infinite direction windowed."""
+    return bool(_infinite_directions(geom))
+
+
 def with_window(geom: dict, extent: float, u=None, v=None) -> dict:
-    """A surface geom with ``window`` filled: explicit u/v, else full periods, else ±extent."""
+    """A surface geom with ``window`` filled: an existing window kept, full periods, ±extent for
+    the directions that run forever, then explicit u/v."""
     kind = geom["type"]
     if kind not in _INFINITE:
         return geom
     window = {d: list(r) for d, r in _FULL_PERIOD[kind].items()}
-    for d in _INFINITE[kind]:
+    for d, r in (geom.get("window") or {}).items():
+        window[d] = list(r)
+    for d in _infinite_directions(geom):
         window[d] = [-float(extent), float(extent)]
     if u is not None:
         window["u"] = [float(u[0]), float(u[1])]

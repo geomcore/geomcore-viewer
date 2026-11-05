@@ -9,10 +9,12 @@ from geomcore_viewer.adapt import (
     PALETTE,
     TAU,
     _frame,
+    _rotate_about,
     as_vec,
     eval_curve,
     eval_surface,
     indexed,
+    missing_window,
     scene_extent,
     subscript,
     to_objects,
@@ -21,6 +23,7 @@ from geomcore_viewer.adapt import (
 )
 
 TILTED = _frame([1.0, 2.0, 3.0], [1.0, -1.0, 0.0], [1.0, 1.0, 1.0])
+FLAT = _frame([0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0])
 
 
 # --- duck-typed stand-ins named like geomcore classes ---------------------
@@ -78,6 +81,11 @@ CASES = [
      {"semi_angle": -0.4, "ref_radius": 0.0}),
     ("Sphere", {"type": "sphere", "frame": TILTED, "r": 3.0}, {"center": Point3D(*TILTED["o"]), "radius": 3.0}),
     ("Torus", {"type": "torus", "frame": TILTED, "R": 4.0, "r": 1.0}, {"major_radius": 4.0, "minor_radius": 1.0}),
+    ("Ellipse2D", {"type": "ellipse", "frame": FLAT, "a": 3.0, "b": 2.0},
+     {"center": Point3D(*FLAT["o"]), "major_radius": 3.0, "minor_radius": 2.0}),
+    ("Hyperbola2D", {"type": "hyperbola", "frame": FLAT, "a": 2.0, "b": 1.0},
+     {"center": Point3D(*FLAT["o"]), "major_radius": 2.0, "minor_radius": 1.0}),
+    ("Parabola2D", {"type": "parabola", "frame": FLAT, "f": 0.7}, {"focal": 0.7}),
 ]
 
 
@@ -221,6 +229,94 @@ def test_bspline_surface_clamps_a_non_finite_bound():
     vertices = part["geom"]["vertices"]
     xs = [p[0] for p in vertices]
     assert (min(xs), max(xs)) == (-100.0, 100.0)
+
+
+def profile_surface_fake(name, profile, direction=(0.0, 0.0, 1.0), origin=(0.0, 0.0, 0.0)):
+    """An ExtrusionSurface/RevolutionSurface stand-in over a fake profile, evaluating like geomcore."""
+
+    def eval_point(self, u, v):
+        if name == "ExtrusionSurface":
+            p = as_vec(profile.eval_point(u))
+            return Point3D(*[p[i] + v * direction[i] for i in range(3)])
+        return Point3D(*_rotate_about(as_vec(profile.eval_point(v)), list(origin), list(direction), u))
+
+    attrs = {"eval_point": eval_point, "profile": lambda self: profile}
+    if name == "RevolutionSurface":
+        axis = type("Axis", (), {"origin": lambda self: Point3D(*origin),
+                                 "direction": lambda self: Vector3D(*direction)})()
+        attrs["axis"] = lambda self: axis
+    else:
+        attrs["direction"] = lambda self: Vector3D(*direction)
+    return type(name, (), attrs)()
+
+
+def circle_fake():
+    return fake("Circle3D", {"type": "circle", "frame": TILTED, "r": 1.5},
+                center=Point3D(*TILTED["o"]), radius=1.5, normal=Vector3D(*TILTED["z"]))
+
+
+def test_sampled_curves_become_polylines_over_their_bounds():
+    for name in ("BSplineCurve2D", "BezierCurve", "BezierCurve2D"):
+        [part] = to_objects(fake(name, {"type": "line", "o": [0.0, 1.0, 0.0], "d": [1.0, 0.0, 0.0]},
+                                  bounds=(0.0, 2.0)), "S")
+        assert part["geom"]["type"] == "polyline" and part["source"] == name
+        assert part["geom"]["points"][0] == [0.0, 1.0, 0.0]
+        assert part["geom"]["points"][-1] == pytest.approx([2.0, 1.0, 0.0])
+
+
+def test_sampled_curves_clamp_an_infinite_bound():
+    [part] = to_objects(fake("BSplineCurve3D", {"type": "line", "o": [0.0, 0.0, 0.0], "d": [1.0, 0.0, 0.0]},
+                              bounds=(-math.inf, math.inf)))
+    xs = [p[0] for p in part["geom"]["points"]]
+    assert (xs[0], xs[-1]) == (-100.0, 100.0)
+
+
+def test_sampled_surfaces_draw_their_own_u_v_bounds():
+    surface = fake("BezierSurface", XY_PLANE, u_bounds=(0.0, 1.0), v_bounds=(2.0, 4.0))
+    [part] = to_objects(surface)
+    xs = [p[0] for p in part["geom"]["vertices"]]
+    ys = [p[1] for p in part["geom"]["vertices"]]
+    assert part["geom"]["type"] == "mesh"
+    assert (min(xs), max(xs)) == (0.0, 1.0)
+    assert (min(ys), max(ys)) == (2.0, 4.0)
+
+
+def test_extrusion_is_sent_exactly_from_its_profile():
+    profile = circle_fake()
+    [part] = to_objects(profile_surface_fake("ExtrusionSurface", profile))
+    geom = part["geom"]
+    assert geom["type"] == "extrusion" and geom["direction"] == [0.0, 0.0, 1.0]
+    assert geom["profile"]["type"] == "circle"
+    assert geom["window"] == {"u": [0.0, TAU]}
+    for u, v in ((0.3, 1.7), (2.0, -0.4)):
+        p = eval_curve(geom["profile"], u)
+        assert eval_surface(geom, u, v) == pytest.approx([p[0], p[1], p[2] + v])
+
+
+def test_revolution_is_sent_exactly_from_its_profile():
+    line = fake("Line3D", {"type": "line", "o": [1.0, 0.0, 0.0], "d": [0.0, 0.0, 1.0]},
+                origin=Point3D(1.0, 0.0, 0.0), direction=Vector3D(0.0, 0.0, 1.0))
+    [part] = to_objects(profile_surface_fake("RevolutionSurface", line))
+    geom = part["geom"]
+    assert geom["type"] == "revolution" and geom["origin"] == [0.0, 0.0, 0.0]
+    assert geom["direction"] == [0.0, 0.0, 1.0]
+    assert "window" not in geom  # the profile is unbounded: its sweep is windowed from the scene
+    # u is the angle, v the profile parameter: (1, 0, 2) turned a quarter turn about z is (0, 1, 2).
+    assert eval_surface(geom, math.pi / 2, 2.0) == pytest.approx([0.0, 1.0, 2.0])
+
+
+def test_profile_surface_windows_keep_the_profile_and_fill_the_sweep():
+    [part] = to_objects(profile_surface_fake("ExtrusionSurface", circle_fake()))
+    assert missing_window(part["geom"])
+    filled = with_window(part["geom"], 3.0)
+    assert filled["window"] == {"u": [0.0, TAU], "v": [-3.0, 3.0]}
+    assert not missing_window(filled)
+    line = fake("Line3D", {"type": "line", "o": [1.0, 0.0, 0.0], "d": [0.0, 0.0, 1.0]},
+                origin=Point3D(1.0, 0.0, 0.0), direction=Vector3D(0.0, 0.0, 1.0),
+                bounds=(-math.inf, math.inf))
+    [revolution] = to_objects(profile_surface_fake("RevolutionSurface", line))
+    filled = with_window(revolution["geom"], 4.0)
+    assert filled["window"] == {"u": [0.0, TAU], "v": [-4.0, 4.0]}
 
 
 def test_windows_and_extent():
@@ -482,6 +578,59 @@ def test_real_geomcore_bspline_surface_uses_its_own_bounds():
     vertices = narrowed["geom"]["vertices"]
     assert vertices[0] == pytest.approx(as_vec(patch.eval_point(0.5, -0.5)))
     assert vertices[-1] == pytest.approx(as_vec(patch.eval_point(1.0, 0.5)))
+
+
+def test_real_geomcore_2d_conics_are_lifted_exactly():
+    gc = real_geomcore()
+    if not hasattr(gc, "Ellipse2D"):  # geomcore >= 0.43
+        pytest.skip("needs geomcore >= 0.43")
+    ellipse = gc.Ellipse2D.from_frame(gc.Frame2D.world(), 3.0, 2.0)
+    [part] = to_objects(ellipse)
+    assert part["geom"]["type"] == "ellipse"
+    assert part["geom"]["frame"]["z"] == pytest.approx([0.0, 0.0, 1.0])
+    for t in (0.0, 1.1, 2.5):
+        assert eval_curve(part["geom"], t) == pytest.approx(as_vec(ellipse.eval_point(t)))
+    for name, obj in (("parabola", gc.Parabola2D.from_frame(gc.Frame2D.world(), 0.7)),
+                      ("hyperbola", gc.Hyperbola2D.from_frame(gc.Frame2D.world(), 2.0, 1.0))):
+        [part] = to_objects(obj)
+        assert part["geom"]["type"] == name
+        assert eval_curve(part["geom"], 0.8) == pytest.approx(as_vec(obj.eval_point(0.8)))
+
+
+def test_real_geomcore_bezier_curve_and_surface():
+    gc = real_geomcore()
+    if not hasattr(gc, "BezierCurve"):  # geomcore >= 0.43
+        pytest.skip("needs geomcore >= 0.43")
+    curve = gc.BezierCurve.from_bspline(
+        gc.BSplineCurve.interpolate([gc.Point3D(0, 0, 0), gc.Point3D(1, 2, 0), gc.Point3D(3, 0, 0)], 2))
+    [part] = to_objects(curve)
+    assert part["geom"]["type"] == "polyline"
+    t0, t1 = curve.bounds()
+    assert part["geom"]["points"][0] == pytest.approx(as_vec(curve.eval_point(t0)))
+    assert part["geom"]["points"][-1] == pytest.approx(as_vec(curve.eval_point(t1)))
+    patch = gc.Cylinder(gc.Point3D(0, 0, 0), gc.Vector3D(0, 0, 1), 1.0).to_bspline_patch((0.0, 1.0), (0.0, 1.0))
+    surface = gc.BezierSurface.from_bspline(patch)
+    [part] = to_objects(surface)
+    assert part["geom"]["type"] == "mesh" and len(part["geom"]["vertices"]) == 49 * 49
+    assert all(math.hypot(*p[:2]) == pytest.approx(1.0, abs=1e-9) for p in part["geom"]["vertices"])
+
+
+def test_real_geomcore_extrusion_and_revolution_follow_the_kernel():
+    gc = real_geomcore()
+    if not hasattr(gc, "ExtrusionSurface"):  # geomcore >= 0.43
+        pytest.skip("needs geomcore >= 0.43")
+    profile = gc.Circle3D(gc.Point3D(1, 0, 0), gc.Vector3D(0, 1, 0), 0.5)
+    cases = (
+        (gc.ExtrusionSurface(profile, gc.Vector3D(0, 0, 1)), "extrusion", {"u": [0.0, TAU]}),
+        (gc.RevolutionSurface(profile, gc.Axis(gc.Point3D(0, 0, 0), gc.Vector3D(0, 0, 1))),
+         "revolution", {"v": [0.0, TAU]}),
+    )
+    for obj, kind, window in cases:
+        [part] = to_objects(obj)
+        geom = part["geom"]
+        assert geom["type"] == kind and geom["window"] == window
+        for u, v in ((0.3, 1.7), (2.0, -0.4)):
+            assert eval_surface(geom, u, v) == pytest.approx(as_vec(obj.eval_point(u, v)))
 
 
 # --- projection results (geomcore >= 0.36) ---------------------------------

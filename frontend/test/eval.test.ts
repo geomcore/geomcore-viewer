@@ -49,6 +49,38 @@ describe("evalSurface matches geomcore goldens", () => {
 
 const world: Frame = { o: [0, 0, 0], x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1] };
 
+describe("profile surfaces", () => {
+  it("extrudes its profile along the direction", () => {
+    const g: SurfaceGeom = { type: "extrusion", profile: { type: "line", o: [1, 0, 0], d: [0, 0, 1] }, direction: [0, 1, 0] };
+    expect(evalSurface(g, 1.5, 0.25)).toEqual([1, 0.25, 1.5]);
+    const circle: CurveGeom = { type: "circle", frame: world, r: 2 };
+    const cylinder = evalSurface({ type: "extrusion", profile: circle, direction: [0, 0, 1] }, Math.PI / 2, 3);
+    expectClose(cylinder, [0, 2, 3]);
+  });
+
+  it("revolves its profile about the axis with u as the angle", () => {
+    const profile: CurveGeom = { type: "line", o: [1, 0, 2], d: [0, 0, 1] };
+    const g: SurfaceGeom = { type: "revolution", profile, origin: [0, 0, 0], direction: [0, 0, 1] };
+    expectClose(evalSurface(g, Math.PI / 2, 0), [0, 1, 2]);
+    expectClose(evalSurface(g, Math.PI, 1), [-1, 0, 3]);
+  });
+
+  it("evaluates a polyline profile by point index, as a pcurve does", () => {
+    const profile = { type: "polyline" as const, points: [[0, 0, 0], [2, 0, 0], [2, 3, 0]] as Vec3[] };
+    expect(evalSurface({ type: "extrusion", profile, direction: [0, 0, 1] }, 1.5, 4)).toEqual([2, 1.5, 4]);
+  });
+
+  it("windows a revolution over a full turn and its profile's own range", () => {
+    const circle: CurveGeom = { type: "circle", frame: world, r: 1 };
+    expect(surfaceWindow({ type: "revolution", profile: circle, origin: [0, 0, 0], direction: [0, 0, 1] }, 5)).toEqual({
+      u: [0, 2 * Math.PI], v: [0, 2 * Math.PI], assumed: false,
+    });
+    expect(surfaceWindow({ type: "extrusion", profile: { type: "line", o: [1, 0, 0], d: [0, 0, 1] }, direction: [0, 1, 0] }, 5)).toEqual({
+      u: [-5, 5], v: [-5, 5], assumed: true,
+    });
+  });
+});
+
 
 describe("surfaceWindow", () => {
   it("fills full periods and flags assumed infinite directions", () => {

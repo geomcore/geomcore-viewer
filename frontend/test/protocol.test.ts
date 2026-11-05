@@ -35,6 +35,42 @@ describe("parseObject", () => {
   });
 });
 
+describe("profile surfaces", () => {
+  it("parses an extrusion and a revolution, padding 2D vectors", () => {
+    const extrusion = parseObject({
+      id: "X",
+      geom: { type: "extrusion", profile: { type: "line", o: [1, 0], d: [0, 1] }, direction: [0, 0, 1], window: { v: [-1, 1] } },
+    });
+    expect(extrusion).toEqual({
+      object: {
+        id: "X",
+        geom: {
+          type: "extrusion", profile: { type: "line", o: [1, 0, 0], d: [0, 1, 0] },
+          direction: [0, 0, 1], window: { v: [-1, 1] },
+        },
+      },
+    });
+    const revolution = parseObject({
+      id: "R",
+      geom: { type: "revolution", profile: { type: "polyline", points: [[0, 1], [1, 1]] }, origin: [0, 0], direction: [0, 0, 1] },
+    });
+    expect("object" in revolution && revolution.object.geom).toMatchObject({
+      type: "revolution", profile: { points: [[0, 1, 0], [1, 1, 0]] }, origin: [0, 0, 0], direction: [0, 0, 1],
+    });
+  });
+
+  it.each([
+    [{ type: "extrusion", direction: [0, 0, 1] }, "extrusion.profile must be a curve or a polyline"],
+    [{ type: "extrusion", profile: { type: "plane", frame }, direction: [0, 0, 1] }, "extrusion.profile must be a curve or a polyline"],
+    [{ type: "extrusion", profile: { type: "line", o: [0, 0], d: [1, 0] }, direction: [0, 0, 0] }, "extrusion.direction must be a non-zero vector"],
+    [{ type: "extrusion", profile: { type: "line", o: [0, 0], d: [1, 0] }, direction: [0, 0, 1], window: { u: [1] } }, "extrusion.window must be {u?: [a, b], v?: [a, b]}"],
+    [{ type: "revolution", profile: { type: "line", o: [0, 0], d: [1, 0] }, direction: [0, 0, 1] }, "revolution.origin must be a point"],
+    [{ type: "revolution", profile: { type: "line", o: [0, 0], d: [1, 0] }, origin: [0, 0, 0], direction: [0, 0, 0] }, "revolution.direction must be a non-zero vector"],
+  ])("rejects malformed %j", (geom, message) => {
+    expect(parseObject({ id: "a", geom })).toEqual({ problem: { id: "a", message } });
+  });
+});
+
 describe("pcurve", () => {
   it("accepts a (u, v) line, circle or polyline and pads 2D vectors", () => {
     const line = parseObject({ id: "c", geom: { type: "pcurve", surface: "Y", curve: { type: "line", o: [0, 3], d: [1, 0], range: [0, 6] } } });

@@ -63,6 +63,11 @@ pre-0.39 names (`Point3D`, `Circle3D`…), so older kernels keep working.
 | `gv.add(...)`, `gv.clear()` | same, on the most recent viewer (handy in `pdb`) |
 | `geomcore-viewer serve` / `geomcore-viewer stop` | run / stop the server by hand |
 
+`add` takes the elementary curves and surfaces, the 2D conics (drawn in
+z = 0), B-spline and Bézier curves and surfaces (sampled over their parameter
+bounds), trimmed curves, extrusions and revolutions (sent exactly as their
+profile plus the sweep), points, and lists of those.
+
 Default windows for infinite surfaces (planes, cylinders, cones) are computed
 from the objects already added, so add the finite objects first or pass `u=`
 and `v=`. A `BSplineSurface` draws its own knot domain unless `u=`/`v=` narrows
