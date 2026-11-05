@@ -199,6 +199,60 @@ def test_escape_hatches_coerce_inputs(server):
     assert geoms["tx"] == {"type": "text", "at": [1.0, 1.0, 0.0], "text": "42"}
 
 
+def test_batch_sends_once_at_the_end(server):
+    view = make(server)
+    calls = []
+
+    def record(method, path, body, **kwargs):
+        calls.append(path)
+        return True
+
+    view._request = record
+    with view.batch():
+        view.arrow((0, 0, 0), (1, 0, 0))
+        view.arrow((0, 1, 0), (1, 0, 0))
+        with view.batch():  # nested: still one send
+            view.polyline([(0, 0), (1, 1)])
+        assert calls == []  # nothing sent mid-block
+    assert calls == ["/api/objects"]
+    assert len(view.objects) == 3
+
+
+def test_batch_flushes_once_even_when_the_block_raises(server):
+    view = make(server)
+    calls = []
+    view._request = lambda method, path, body, **kwargs: calls.append(path) or True
+    with pytest.raises(ValueError, match="boom"):
+        with view.batch():
+            view.arrow((0, 0, 0), (1, 0, 0))
+            raise ValueError("boom")
+    assert calls == ["/api/objects"]
+
+
+def test_list_inputs_draw_many_shapes_in_one_call(server):
+    view = make(server)
+    view.polyline([[(0, 0), (1, 0)], [(0, 1), (1, 1)]], label="L")
+    view.arrow([(0, 0, 0), (1, 1, 0)], [(1, 0, 0), (0, 1, 0)], label="A")
+    view.text([(0, 0), (1, 1)], "hi", label="T")
+    view.text([(0, 0), (1, 1)], ["a", "b"], label="U")
+    view.polyline([(0, 0), (1, 1)], label="one")  # a single polyline still works
+    geoms = {o["id"]: o["geom"] for o in _scene(server)["objects"]}
+    assert geoms["L₁"]["points"] == [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]]
+    assert geoms["L₂"]["points"] == [[0.0, 1.0, 0.0], [1.0, 1.0, 0.0]]
+    assert geoms["A₂"] == {"type": "arrow", "at": [1.0, 1.0, 0.0], "vec": [0.0, 1.0, 0.0]}
+    assert geoms["T₁"]["text"] == "hi" and geoms["T₂"]["at"] == [1.0, 1.0, 0.0]
+    assert [geoms["U₁"]["text"], geoms["U₂"]["text"]] == ["a", "b"]
+    assert geoms["one"]["points"] == [[0.0, 0.0, 0.0], [1.0, 1.0, 0.0]]
+
+
+def test_list_inputs_need_the_same_number_of_items(server):
+    view = make(server)
+    with pytest.raises(TypeError, match="same number"):
+        view.arrow([(0, 0), (1, 1)], [(1, 0), (0, 1), (2, 2)])
+    with pytest.raises(TypeError, match="same number"):
+        view.text([(0, 0), (1, 1)], ["a", "b", "c"])
+
+
 def test_offline_buffers_warns_once_then_flushes(tmp_path):
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
