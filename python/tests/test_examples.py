@@ -12,8 +12,8 @@ EXAMPLES = sorted((Path(__file__).resolve().parents[2] / "examples").glob("*.py"
 @pytest.mark.parametrize("example", EXAMPLES, ids=lambda path: path.name)
 def test_example_builds_its_scene_headless(example, tmp_path, monkeypatch):
     geomcore = pytest.importorskip("geomcore")
-    if not hasattr(geomcore, "CurveCurveIntersection"):
-        pytest.skip("the examples need geomcore >= 0.36")
+    if not (hasattr(geomcore, "Point") and hasattr(geomcore.curves, "Circle")):
+        pytest.skip("the examples use the current class names: geomcore >= 0.39")
     saved = tmp_path / "scene.json"
     monkeypatch.setattr(sys, "argv", [str(example), "--save", str(saved)])
     runpy.run_path(str(example), run_name="__main__")
