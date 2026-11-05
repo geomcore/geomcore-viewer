@@ -112,10 +112,10 @@ class Viewer:
         return self._commit(parts, label, group, options, u, v)
 
     def pcurve(self, curve, on, *, label: str | None = None, group: str | None = None, **options):
-        """Show a curve given in a surface's (u, v) parameters: a geomcore ``Line2D`` or
-        ``Circle2D`` (e.g. ``circle.parametrize_on(surface)``) or a sequence of ``(u, v)``
-        pairs. ``on`` is the surface, already added: its :class:`Handle` or id. The page
-        draws the curve on the surface in 3D and in the (u,v) pane.
+        """Show a curve given in a surface's (u, v) parameters: any geomcore 2D curve — a
+        ``Line2D``/``Circle2D`` or one of the others, sampled to a polyline — or a sequence of
+        ``(u, v)`` pairs. ``on`` is the surface, already added: its :class:`Handle` or id. The
+        page draws the curve on the surface in 3D and in the (u,v) pane.
         """
         surface = on.id if isinstance(on, Handle) else on
         if self.objects.get(surface, {}).get("geom", {}).get("type") not in SURFACE_TYPES:

@@ -348,8 +348,51 @@ def test_uv_curves():
         uv_curve([(0, 0, 1), (1, 1, 1)])
     with pytest.raises(TypeError, match="at least 2"):
         uv_curve([(0, 0)])
-    with pytest.raises(TypeError, match="Line2D"):
+    with pytest.raises(TypeError, match="Line3D"):
         uv_curve(fake("Line3D", {"type": "line", "o": [0.0, 0.0, 0.0], "d": [1.0, 0.0, 0.0]}))
+
+
+def test_uv_curves_accept_every_2d_curve():
+    flat = _frame([0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0])
+    ellipse = fake("Ellipse2D", {"type": "ellipse", "frame": flat, "a": 3.0, "b": 2.0},
+                   bounds=(0.0, 2 * math.pi))
+    sampled = uv_curve(ellipse)
+    assert sampled["type"] == "polyline"
+    assert sampled["points"][0] == pytest.approx([3.0, 0.0, 0.0])
+    assert sampled["points"][-1] == pytest.approx([3.0, 0.0, 0.0])
+    assert len(sampled["points"]) == 257
+    for name in ("Parabola2D", "Hyperbola2D", "BezierCurve2D", "BSplineCurve2D", "TrimmedCurve2D"):
+        curve = fake(name, {"type": "line", "o": [0.0, 0.0, 0.0], "d": [1.0, 0.0, 0.0]}, bounds=(0.0, 2.0))
+        assert uv_curve(curve)["type"] == "polyline", name
+
+
+def test_uv_curve_refuses_an_unbounded_curve():
+    parabola = fake("Parabola2D", {"type": "parabola", "frame": TILTED, "f": 0.7},
+                    bounds=(-math.inf, math.inf))
+    with pytest.raises(TypeError, match="unbounded Parabola2D"):
+        uv_curve(parabola)
+
+
+def test_uv_curves_sample_the_2d_kinds_without_an_exact_form():
+    bspline = fake("BSplineCurve2D", {"type": "line", "o": [0.0, 0.0, 0.0], "d": [1.0, 0.0, 0.0]},
+                   bounds=(0.0, 2.0))
+    sampled = uv_curve(bspline)
+    assert sampled["type"] == "polyline"
+    assert sampled["points"][0] == [0.0, 0.0, 0.0] and sampled["points"][-1] == pytest.approx([2.0, 0.0, 0.0])
+    trimmed = fake("TrimmedCurve2D", {"type": "line", "o": [0.0, 1.0, 0.0], "d": [1.0, 0.0, 0.0]},
+                   bounds=(1.0, 3.0))
+    sampled = uv_curve(trimmed)
+    xs = [p[0] for p in sampled["points"]]
+    assert len(xs) == 257 and xs[0] == 1.0 and xs[-1] == 3.0
+    assert all(1.0 <= x <= 3.0 for x in xs)
+    assert all(p[2] == 0.0 for p in sampled["points"])
+
+
+def test_uv_curve_errors_are_clear_for_things_that_are_not_curves():
+    with pytest.raises(TypeError, match="not a object"):
+        uv_curve(object())
+    with pytest.raises(TypeError, match="not a int"):
+        uv_curve(7)
 
 
 def test_real_geomcore_parametrize_on_gives_a_uv_curve():
@@ -366,6 +409,37 @@ def test_real_geomcore_parametrize_on_gives_a_uv_curve():
     assert uv_curve(q) == {"type": "line", "o": [0.0, 1.5, 0.0], "d": [1.0, 0.0, 0.0]}
     flipped = uv_curve_on(Circle3D(P(1, 1, 0), V(0, 0, -1), 0.5), Plane(P(0, 0, 0), world_z(V)))
     assert uv_curve(flipped)["frame"]["z"] == pytest.approx([0.0, 0.0, -1.0])
+
+
+def test_real_geomcore_trimmed_curves_can_be_added():
+    gc = real_geomcore()
+    P, V = gc.Point3D, gc.Vector3D
+    trimmed = gc.TrimmedCurve3D(gc.Line3D(P(0, 0, 0), V(1, 0, 0)), 1.0, 3.0)
+    [part] = to_objects(trimmed, "T")
+    xs = [p[0] for p in part["geom"]["points"]]
+    assert part["geom"]["type"] == "polyline" and len(xs) == 65
+    assert xs[0] == 1.0 and xs[-1] == 3.0
+    assert all(p[1] == p[2] == 0.0 for p in part["geom"]["points"])
+
+
+def test_real_geomcore_2d_curves_become_pcurves():
+    gc = real_geomcore()
+    P, V = gc.Point2D, gc.Vector2D
+    circle = uv_curve(gc.Circle2D(P(1, 1), 2.0))
+    assert circle["type"] == "circle" and circle["r"] == 2.0
+    assert circle["frame"]["o"][:2] == pytest.approx([1.0, 1.0])
+    trimmed = uv_curve(gc.TrimmedCurve2D(gc.Line2D(P(0, 0), V(1, 0)), 1.0, 3.0))
+    assert trimmed["type"] == "polyline" and trimmed["points"][0] == [1.0, 0.0, 0.0]
+    assert trimmed["points"][-1][0] == 3.0
+    if hasattr(gc, "Ellipse2D"):  # geomcore >= 0.43
+        ellipse = uv_curve(gc.Ellipse2D.from_frame(gc.Frame2D.world(), 3.0, 2.0))
+        assert ellipse["type"] == "polyline" and len(ellipse["points"]) == 257
+        assert all(p[2] == 0.0 for p in ellipse["points"])
+        with pytest.raises(TypeError, match="unbounded Parabola2D"):
+            uv_curve(gc.Parabola2D.from_frame(gc.Frame2D.world(), 0.7))
+    if hasattr(gc, "BSplineCurve2D"):  # geomcore >= 0.43
+        bspline = uv_curve(gc.Circle2D(P(0, 0), 1.0).to_bspline())
+        assert bspline["type"] == "polyline" and len(bspline["points"]) == 257
 
 
 # --- projection results (geomcore >= 0.36) ---------------------------------
