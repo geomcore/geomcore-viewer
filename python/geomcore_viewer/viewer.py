@@ -27,6 +27,8 @@ EXTRA_KEYS = frozenset({
 })
 VIEWS = ("auto", "2d", "3d")
 DEFAULT_COLORMAP = "viridis"
+# The colour maps the page knows (frontend/src/ui/colormap.ts).
+COLORMAPS = ("viridis", "plasma", "turbo", "coolwarm", "gray")
 
 _default: Viewer | None = None
 
@@ -156,7 +158,7 @@ class Viewer:
         geom = {"type": "mesh", "vertices": [as_vec(p) for p in vertices], "indices": [int(i) for i in indices]}
         if values is not None:
             geom["values"] = _scalars(values, len(geom["vertices"]), "vertex")
-            geom["colormap"] = colormap or DEFAULT_COLORMAP
+            geom["colormap"] = _colormap(colormap, "mesh")
         elif colormap is not None:
             raise ValueError("mesh: colormap= needs values=")
         return self._commit([{"label": label, "geom": geom}], label, group, options)
@@ -167,12 +169,14 @@ class Viewer:
         colours each point through ``colormap`` (default "viridis"; also "plasma", "turbo",
         "coolwarm", "gray"); ``size=`` is its dot radius in pixels."""
         positions = [as_vec(p) for p in xyz]
+        if not positions:
+            raise ValueError("points: xyz is empty")
         geom = {"type": "points", "positions": positions}
         if size is not None:
             geom["size"] = float(size)
         if values is not None:
             geom["values"] = _scalars(values, len(positions), "point")
-            geom["colormap"] = colormap or DEFAULT_COLORMAP
+            geom["colormap"] = _colormap(colormap, "points")
         elif colormap is not None:
             raise ValueError("points: colormap= needs values=")
         return self._commit([{"label": label, "geom": geom}], label, group, options)
@@ -450,6 +454,16 @@ def _paired(left, right):
     if len(a) != len(b):
         raise TypeError(f"expected the same number of items, got {len(a)} and {len(b)}")
     return zip(a, b)
+
+
+def _colormap(name: str | None, method: str) -> str:
+    """The colour map to send: ``name``, or the default; an unknown name is a ValueError here
+    rather than a silent fallback in the page."""
+    if name is None:
+        return DEFAULT_COLORMAP
+    if name not in COLORMAPS:
+        raise ValueError(f"{method}: unknown colormap {name!r}; expected one of {', '.join(COLORMAPS)}")
+    return name
 
 
 def _scalars(values, count: int, unit: str) -> list[float]:

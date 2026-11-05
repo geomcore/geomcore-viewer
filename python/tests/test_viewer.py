@@ -598,3 +598,23 @@ def test_numpy_arrays_are_points_and_point_lists(server):
     assert view.objects["D"]["geom"]["at"] == [1.0, 2.0, 3.0]
     texts = view.text([(0, 0), (1, 1)], np.array(["a", "b"]), label="T")
     assert [view.objects[h.id]["geom"]["text"] for h in texts] == ["a", "b"]
+
+
+def test_points_reject_an_unknown_colormap_and_an_empty_cloud(server):
+    view = make(server)
+    with pytest.raises(ValueError, match="unknown colormap 'nope'"):
+        view.points([(0, 0, 0)], values=[1.0], colormap="nope")
+    with pytest.raises(ValueError, match="unknown colormap"):
+        view.mesh([(0, 0, 0), (1, 0, 0), (0, 1, 0)], [0, 1, 2], values=[0, 1, 2], colormap="jet")
+    with pytest.raises(ValueError, match="empty"):
+        view.points([])
+    assert view.points([(0, 0, 0)], values=[1.0], colormap="coolwarm", label="P") is not None
+    assert view.objects["P"]["geom"]["colormap"] == "coolwarm"
+
+
+def test_python_colormaps_match_the_page():
+    from geomcore_viewer.viewer import COLORMAPS
+
+    source = (Path(__file__).resolve().parents[2] / "frontend/src/ui/colormap.ts").read_text()
+    maps = re.search(r"const MAPS[^{]*\{(.*?)\n\};", source, re.S).group(1)
+    assert tuple(re.findall(r"^  ([a-z]+):", maps, re.M)) == COLORMAPS
