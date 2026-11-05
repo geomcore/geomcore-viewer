@@ -115,6 +115,19 @@ describe("objectDraw3D", () => {
     expect(d.texts[0].text).toBe("P (1, 2, 3)");
   });
 
+  it("draws client-computed extras as extra lines and dots", () => {
+    const b = obj("B", { type: "polyline", points: [[0, 0, 0], [1, 0, 0]] }, {
+      extras: { poles: [[0, 0, 0], [1, 1, 0]], knots: [[0.5, 0, 0]], normals: [[[0, 0, 0], [0, 0, 1]]] },
+    });
+    const d = objectDraw3D(b, ctx([b]));
+    const extra = d.lines.filter((l) => l.extra);
+    expect(extra).toHaveLength(1);
+    expect(extra[0].paths.length).toBeGreaterThan(2); // dashed control polygon and normal segment
+    expect(extra[0].paths.flat().some((p) => p[1] === 1)).toBe(true); // the bend of the control polygon
+    expect(d.markers.filter((m) => m.extra).flatMap((m) => m.at)).toEqual([[0, 0, 0], [1, 1, 0], [0.5, 0, 0]]);
+    expect(d.texts.filter((t) => t.kind === "extra")).toEqual([]); // pole/knot dots stay unlabelled
+  });
+
   it("draws curve extras dashed and lighter-weight, with named markers", () => {
     const e = obj("E", { type: "ellipse", frame: world, a: 3, b: 2 }, { extras: { foci: true, axes: true } });
     const d = objectDraw3D(e, ctx([e]));
