@@ -128,7 +128,7 @@ RENAMED_CASES = [
 @pytest.mark.parametrize("name,geom,getters", RENAMED_CASES, ids=[c[0] for c in RENAMED_CASES])
 def test_current_class_names_dispatch_on_the_legacy_map(name, geom, getters):
     [part] = to_objects(fake(name, geom, **getters), "K")
-    assert part["source"] == LEGACY_NAMES[name]
+    assert part["source"] == name  # what the user sees is their own class name, not the legacy one
     if name != "BSplineCurve":  # a sampled B-spline arrives as a polyline over its bounds
         assert part["geom"]["type"] == geom["type"]
 
@@ -136,7 +136,7 @@ def test_current_class_names_dispatch_on_the_legacy_map(name, geom, getters):
 def test_current_point_name_dispatches():
     point = type("Point", (), {"x": 1.0, "y": 2.0, "z": 3.0})()
     assert to_objects(point, "A") == [
-        {"label": "A", "geom": {"type": "point", "p": [1.0, 2.0, 3.0]}, "source": "Point3D"}]
+        {"label": "A", "geom": {"type": "point", "p": [1.0, 2.0, 3.0]}, "source": "Point"}]
 
 
 def test_points_result_gets_subscripted_labels():
@@ -1059,7 +1059,8 @@ def test_live_default_group_names_are_identical_across_two_calls():
     first_call = to_objects(circle.intersect(line))
     second_call = to_objects(circle.intersect(line))
     assert [(p["key"], p.get("group")) for p in first_call] == [(p["key"], p.get("group")) for p in second_call]
-    assert {p["group"] for p in first_call if "group" in p} == {"Circle3D × Line3D"}
+    assert {p["group"] for p in first_call if "group" in p} == {
+        f"{type(circle).__name__} × {type(line).__name__}"}
 
 
 def test_live_2d_closest_point_is_lifted_to_z_zero():

@@ -292,7 +292,7 @@ def _single(obj, label: str | None, u, v) -> list[dict]:
         geom = {"type": "mesh", "vertices": vertices, "indices": indices}
     else:
         raise TypeError(name)
-    return [{"label": label, "geom": geom, "source": name}]
+    return [{"label": label, "geom": geom, "source": type(obj).__name__}]
 
 
 UV_CURVES = frozenset({"Line2D", "Circle2D"})
@@ -453,7 +453,7 @@ def _projection(result, label: str | None, u=None, v=None) -> list[dict]:
     ``u=`` / ``v=`` say otherwise.
     """
     if label is None:
-        label = f"projection on {_name(result.target)}"
+        label = f"projection on {type(result.target).__name__}"
     if type(result).__name__ == "SurfaceProjection":
         name = _name(result.target)
         bounds_u, bounds_v, half = _surface_window_bounds(name, result, u, v)
@@ -648,8 +648,7 @@ def _intersection(result, label: str | None, u=None, v=None) -> list[dict]:
     defaults: ``color=`` or ``dashed=`` given to ``add`` override them; ``opacity=`` applies to the
     operands only.
     """
-    first_name, second_name = _name(result.first), _name(result.second)
-    label = label or f"{first_name} × {second_name}"
+    label = label or f"{type(result.first).__name__} × {type(result.second).__name__}"
     parts = []
     for i, piece in enumerate(getattr(result, "curves", ()), start=1):
         [curve] = _single(piece.curve, None, None, None)
@@ -677,8 +676,7 @@ def _intersection(result, label: str | None, u=None, v=None) -> list[dict]:
 
 def _extrema(result, label: str | None, u=None, v=None) -> list[dict]:
     """Both curves translucent and a dashed segment joining the two points of each minimum."""
-    first_name, second_name = _name(result.first), _name(result.second)
-    label = label or f"{first_name} × {second_name} extrema"
+    label = label or f"{type(result.first).__name__} × {type(result.second).__name__} extrema"
     parts = []
     for i, minimum in enumerate(result.minima, start=1):
         ends = [as_vec(result.first.eval_point(minimum.first_parameter)),
