@@ -541,9 +541,12 @@ def test_tangent_hit_and_tangent_curve_are_labelled():
     keys = by_key(to_objects(result, "S"))
     assert keys["S·curve1"]["label"] == "tangent" and keys["S·curve2"]["label"] is None
     assert keys["S·curve1"]["geom"]["type"] == "circle" and keys["S·curve1"]["style"]["color"] == ACCENT
-    assert keys["S·contact1"]["label"] == "tangent"
+    assert keys["S·contact1"]["label"] is None
+    assert keys["S·contact1"]["meta"] == {"tag": "contact", "tangent": True}
     double = CurveCurveIntersection(x_line(), unit_circle(), hits=[CurveCurveHit(Point3D(1, 0, 0), 0.0, 0.0, 2)])
-    assert by_key(to_objects(double, "T"))["T·hit1"]["label"] == "tangent"
+    tangent_hit = by_key(to_objects(double, "T"))["T·hit1"]
+    assert tangent_hit["label"] is None
+    assert tangent_hit["meta"] == {"tag": "hit", "params": [0.0, 0.0], "tangent": True}
 
 
 def test_overlap_is_the_operand_sampled_over_its_range():
@@ -688,7 +691,8 @@ def test_real_geomcore_intersections_and_extrema_display():
     line = Line3D(P(0, 0, 0), V(1, 0, 0))
     tangent_line = Line3D(P(1, -1, 0), V(0, 1, 0))
     tangent = to_objects(Circle3D(P(0, 0, 0), unit_z, 1.0).intersect(tangent_line), "A")
-    assert by_key(tangent)["A·hit1"]["label"] == "tangent"
+    assert by_key(tangent)["A·hit1"]["label"] is None
+    assert by_key(tangent)["A·hit1"]["meta"]["tangent"] is True
     overlap = to_objects(line.intersect(Line3D(P(2, 0, 0), V(1, 0, 0))), "B")
     assert by_key(overlap)["B·overlap1"]["geom"]["type"] == "line"
     plane_sphere = to_objects(Plane(P(0, 0, 0), unit_z).intersect(Sphere(P(0, 0, 0), 1.0)), "C")

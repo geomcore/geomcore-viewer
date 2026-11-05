@@ -76,6 +76,8 @@ export interface DrawList {
 const KIND_ORDER: Record<TextKind, number> = { text: 0, point: 1, curve: 2, extra: 3 };
 
 const labelOf = (o: SceneObject): string => o.label ?? o.id;
+/** " tangent" for a tangent hit or contact point, whose id then stays next to its coordinates. */
+const tangent = (o: SceneObject): string => (o.meta?.tangent === true ? " tangent" : "");
 const insideRect = (r: Rect, p: Vec3): boolean => p[0] >= r.xmin && p[0] <= r.xmax && p[1] >= r.ymin && p[1] <= r.ymax;
 
 /** The curve's visible pieces as screen polylines: clipped in closed form, then sampled to ≤ 0.25 px. */
@@ -154,7 +156,7 @@ export function buildDrawList(objects: Iterable<SceneObject>, cam: Camera2D, opt
       const at = screen(g.p);
       out.dots.push({ id: o.id, at, color, radius: POINT_PX * ws + lit, alpha, hollow: false });
       pick.dots.push({ at, index: 0 });
-      out.texts.push({ key: `p:${o.id}`, id: o.id, text: `${labelOf(o)} ${fmtPoint(g.p)}`, at, color: opts.palette.text, kind: "point" });
+      out.texts.push({ key: `p:${o.id}`, id: o.id, text: `${labelOf(o)}${tangent(o)} ${fmtPoint(g.p)}`, at, color: opts.palette.text, kind: "point" });
     } else if (g.type === "points") {
       const radius = (g.size ?? 3) * ws + lit;
       g.positions.forEach((p, index) => {

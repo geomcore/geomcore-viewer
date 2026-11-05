@@ -115,6 +115,11 @@ describe("objectDraw3D", () => {
     expect(d.texts[0].text).toBe("P (1, 2, 3)");
   });
 
+  it("labels a tangent hit with its name, the tangency and its coordinates", () => {
+    const hit = obj("P·hit1", { type: "point", p: [0, -2, 0] }, { meta: { tag: "hit", tangent: true } });
+    expect(objectDraw3D(hit, ctx([])).texts[0].text).toBe("P·hit1 tangent (0, -2)");
+  });
+
   it("draws curve extras dashed and lighter-weight, with named markers", () => {
     const e = obj("E", { type: "ellipse", frame: world, a: 3, b: 2 }, { extras: { foci: true, axes: true } });
     const d = objectDraw3D(e, ctx([e]));

@@ -104,6 +104,8 @@ export interface Context3D {
 }
 
 const labelOf = (o: SceneObject): string => o.label ?? o.id;
+/** " tangent" for a tangent hit or contact point, whose id then stays next to its coordinates. */
+const tangent = (o: SceneObject): string => (o.meta?.tangent === true ? " tangent" : "");
 
 /** True when surfaces default to see-through: some curve, polyline or pcurve is in the scene. */
 export function hasCurves(objects: Iterable<SceneObject>): boolean {
@@ -195,7 +197,7 @@ export function objectDraw3D(o: SceneObject, ctx: Context3D): ObjectDraw3D {
   } else if (g.type === "point") {
     out.markers.push({ id: o.id, at: [g.p], color, px: POINT_PX, alpha, extra: false });
     out.pick.dots.push(g.p);
-    out.texts.push({ key: `p:${o.id}`, id: o.id, text: `${labelOf(o)} ${fmtPoint(g.p)}`, at: g.p, color: null, kind: "point" });
+    out.texts.push({ key: `p:${o.id}`, id: o.id, text: `${labelOf(o)}${tangent(o)} ${fmtPoint(g.p)}`, at: g.p, color: null, kind: "point" });
   } else if (g.type === "points") {
     out.markers.push({ id: o.id, at: g.positions, color, px: g.size ?? 3, alpha, extra: false });
     out.pick.dots.push(...g.positions);

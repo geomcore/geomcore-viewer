@@ -616,11 +616,14 @@ def _intersection(result, label: str | None, u=None, v=None) -> list[dict]:
         parts.append({**curve, "key": f"{label}·curve{i}", "group": label, "style": {"color": ACCENT},
                       "keeps_style": ("opacity",), "label": "tangent" if piece.tangent else None})
     for i, hit in enumerate(getattr(result, "hits", ()), start=1):
-        text = "tangent" if hit.multiplicity >= 2 else None
-        parts.append(_result_point(hit.point, f"{label}·hit{i}", label, text,
-                                   {"tag": "hit", "params": _hit_params(hit)}))
+        # A tangent hit keeps the generated name (P·hit1) and says "tangent" in meta: the row and
+        # the 3D label show both the name and the tangency.
+        meta = {"tag": "hit", "params": _hit_params(hit)}
+        if hit.multiplicity >= 2:
+            meta["tangent"] = True
+        parts.append(_result_point(hit.point, f"{label}·hit{i}", label, None, meta))
     for i, point in enumerate(getattr(result, "contact_points", ()), start=1):
-        parts.append(_result_point(point, f"{label}·contact{i}", label, "tangent"))
+        parts.append(_result_point(point, f"{label}·contact{i}", label, None, {"tag": "contact", "tangent": True}))
     for i, overlap in enumerate(getattr(result, "overlaps", ()), start=1):
         parts.append(_overlap_part(result, overlap, f"{label}·overlap{i}", label))
     status_parts = _completeness_parts(result, label)

@@ -44,7 +44,10 @@ export interface PanelModel {
 
 function detailOf(o: SceneObject, objects: Map<string, SceneObject>): { detail: string; warn: boolean } {
   const g = o.geom;
-  if (g.type === "point") return { detail: fmtPoint(g.p), warn: false };
+  if (g.type === "point") {
+    const tangent = o.meta?.tangent === true ? "tangent, " : "";
+    return { detail: `${tangent}${fmtPoint(g.p)}`, warn: false };
+  }
   if (g.type === "points") return { detail: `${g.positions.length} points`, warn: false };
   if (g.type === "pcurve") {
     if (!pcurveSurface(g, (id) => objects.get(id)?.geom)) return { detail: `no surface ${g.surface}`, warn: true };
