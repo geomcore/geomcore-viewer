@@ -1,4 +1,13 @@
-export type KeyAction = "fit" | "present" | "theme" | "view2d" | "view3d" | "uvpane" | "escape";
+export type KeyAction =
+  | "fit"
+  | "present"
+  | "theme"
+  | "view2d"
+  | "view3d"
+  | "uvpane"
+  | "framePrev"
+  | "frameNext"
+  | "escape";
 
 /** Spec §5.1 keys. */
 const KEYS: ReadonlyMap<string, KeyAction> = new Map([
@@ -8,6 +17,8 @@ const KEYS: ReadonlyMap<string, KeyAction> = new Map([
   ["2", "view2d"],
   ["3", "view3d"],
   ["u", "uvpane"],
+  ["arrowleft", "framePrev"],
+  ["arrowright", "frameNext"],
   ["escape", "escape"],
 ]);
 

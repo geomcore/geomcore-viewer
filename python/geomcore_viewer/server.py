@@ -85,6 +85,7 @@ class _State:
         self.title = ""
         self.view = "auto"
         self.run: str | None = None
+        self.frames: list[str] = []
         self.objects: dict[str, dict] = {}
         self.subscribers: list[queue.Queue[str]] = []
         self.lock = threading.Lock()
@@ -95,6 +96,7 @@ class _State:
             "title": self.title,
             "run": self.run,
             "view": self.view,
+            "frames": list(self.frames),
             "objects": list(self.objects.values()),
         }
 
@@ -115,16 +117,21 @@ class _State:
                 self.run = run
                 if not keep:
                     self.objects.clear()
+                    self.frames.clear()
                     self.title, self.view = "", "auto"
                 self._broadcast({"type": "run", "run": run, "keep": keep})
             if isinstance(batch.get("title"), str):
                 self.title = batch["title"]
             if isinstance(batch.get("view"), str):
                 self.view = batch["view"]
+            frames = batch.get("frames")
+            if isinstance(frames, list) and all(isinstance(f, str) for f in frames):
+                self.frames = list(frames)
             objects = batch.get("objects", [])
             for obj in objects:
                 self.objects[obj["id"]] = obj
-            self._broadcast({"type": "upsert", "objects": objects, "title": self.title, "view": self.view})
+            self._broadcast({"type": "upsert", "objects": objects, "title": self.title,
+                             "view": self.view, "frames": list(self.frames)})
 
     def remove(self, object_id: str) -> bool:
         with self.lock:
@@ -136,6 +143,7 @@ class _State:
     def clear(self) -> None:
         with self.lock:
             self.objects.clear()
+            self.frames.clear()
             self._broadcast({"type": "clear"})
 
     def subscribe(self) -> queue.Queue[str]:

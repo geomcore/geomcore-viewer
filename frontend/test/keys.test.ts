@@ -13,6 +13,8 @@ describe("keyAction", () => {
     expect(press("t")).toBe("theme");
     expect(press("2")).toBe("view2d");
     expect(press("3")).toBe("view3d");
+    expect(press("ArrowLeft")).toBe("framePrev");
+    expect(press("ArrowRight")).toBe("frameNext");
     expect(press("Escape")).toBe("escape");
   });
 

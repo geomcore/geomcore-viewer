@@ -186,6 +186,51 @@ def test_nan_geometry_is_rejected(server):
     assert view.objects == {} and _ids(server) == []
 
 
+def test_frames_hold_their_own_objects(server):
+    view = make(server)
+    view.add(Point3D(0, 0), label="fixed")
+    for name in ("tilt 0°", "tilt 45°"):
+        with view.frame(name):
+            view.add(Point3D(1, 0), label="cone")
+            view.add(Point3D(2, 0), label="plane")
+    scene = _scene(server)
+    assert scene["frames"] == ["tilt 0°", "tilt 45°"]
+    objects = scene["objects"]
+    assert [o["id"] for o in objects if "frame" not in o] == ["fixed"]
+    assert {o["frame"] for o in objects if "frame" in o} == {"tilt 0°", "tilt 45°"}
+    cones = [o for o in objects if o["label"] == "cone"]
+    assert len(cones) == 2 and len({o["id"] for o in cones}) == 2
+    assert all(o["id"].startswith(o["frame"] + "·") for o in cones)
+
+
+def test_re_running_a_frame_replaces_only_that_frame(server):
+    view = make(server)
+    with view.frame("a"):
+        view.add(Point3D(0, 0), label="P")
+    with view.frame("b"):
+        view.add(Point3D(1, 0), label="P")
+    with view.frame("a"):
+        view.add(Point3D(2, 0), label="P")
+    ps = [o for o in _scene(server)["objects"] if o["label"] == "P"]
+    assert sorted((o["frame"], o["geom"]["p"][0]) for o in ps) == [("a", 2.0), ("b", 1.0)]
+
+
+def test_clear_forgets_the_frames(server):
+    view = make(server)
+    with view.frame("a"):
+        view.add(Point3D(0, 0), label="P")
+    view.clear()
+    assert view.frames == [] and _scene(server)["frames"] == []
+
+
+def test_frames_are_on_the_saved_scene(tmp_path):
+    view = gv.Viewer(spawn=False, open_browser=False)
+    with view.frame("one"):
+        view.add(Point3D(0, 0), label="P")
+    saved = json.loads(view.save(tmp_path / "s.json").read_text())
+    assert saved["frames"] == ["one"] and saved["objects"][0]["frame"] == "one"
+
+
 def test_points_builds_one_cloud_object(server):
     view = make(server)
     view.points([(0, 0, 0), (1, 0, 0), (0, 1, 0)], values=[0, 0.5, 1], colormap="plasma", size=4, label="dev")

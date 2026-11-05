@@ -32,6 +32,30 @@ test.beforeEach(async ({ request }) => {
   await request.post("/api/clear", { data: {} });
 });
 
+test("lesson frames browse with the slider, buttons and arrow keys", async ({ page, request }) => {
+  await postScene(request, "frames");
+  await page.goto("/");
+  await expect(page.locator("#frame-bar")).toBeVisible();
+  await expect(page.locator("#frame-label")).toHaveText("tilt 0°");
+  await expect(page.locator("#object-list")).toContainText("cone 0");
+  await expect(page.locator("#object-list")).not.toContainText("cone 45");
+
+  await page.locator("#frame-next").click();
+  await expect(page.locator("#frame-label")).toHaveText("tilt 45°");
+  await expect(page.locator("#object-list")).toContainText("cone 45");
+  await expect(page.locator("#object-list")).not.toContainText("cone 0");
+
+  await page.keyboard.press("ArrowLeft");
+  await expect(page.locator("#frame-label")).toHaveText("tilt 0°");
+  await expect(page.locator("#object-list")).toContainText("cone 0");
+});
+
+test("a single-frame scene hides the frame bar", async ({ page, request }) => {
+  await postScene(request, "quadrics_3d");
+  await page.goto("/");
+  await expect(page.locator("#frame-bar")).toBeHidden();
+});
+
 test("the quadrics scene renders in 3D with its intersection curves", async ({ page, request }) => {
   await postScene(request, "quadrics_3d");
   await page.goto("/");

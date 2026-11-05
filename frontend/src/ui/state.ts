@@ -11,7 +11,17 @@ export function usableView(view: ActiveView, available: AvailableViews): ActiveV
   return !available[view] && available[other] ? other : view;
 }
 
-export type UiEvent = "theme" | "presenting" | "view" | "visibility" | "selection" | "autofit" | "collapse" | "uvpane" | "labels";
+export type UiEvent =
+  | "theme"
+  | "presenting"
+  | "view"
+  | "visibility"
+  | "selection"
+  | "autofit"
+  | "collapse"
+  | "uvpane"
+  | "labels"
+  | "frame";
 
 /** The part of `Storage` the UI needs (tests pass a Map-backed fake). */
 export interface KeyValueStore {
@@ -54,6 +64,10 @@ export class UiState {
   uvPane = true;
   /** Object labels in both views; the header's "labels" toggle turns them off (axis ticks stay). */
   showLabels = true;
+  /** Lesson frames in scene order (from the store) and the one shown; objects without a frame
+   * show in every frame. */
+  frames: string[] = [];
+  frameIndex = 0;
   viewOverride: ActiveView | null = null;
   selected: string | null = null;
   readonly hiddenIds = new Set<string>();
@@ -117,6 +131,33 @@ export class UiState {
     this.emit("labels");
   }
 
+  /** Take the frame list the store reports; the shown frame stays when it still exists. */
+  setFrames(frames: readonly string[]): void {
+    const changed = frames.length !== this.frames.length || frames.some((f, i) => f !== this.frames[i]);
+    this.frames = [...frames];
+    this.frameIndex = Math.min(this.frameIndex, Math.max(0, this.frames.length - 1));
+    if (changed) this.emit("frame");
+  }
+
+  /** Show frame `index` (clamped); the header's slider and ←/→ call this. */
+  setFrame(index: number): void {
+    if (!this.frames.length) return;
+    const next = Math.min(Math.max(0, Math.round(index)), this.frames.length - 1);
+    if (next === this.frameIndex) return;
+    this.frameIndex = next;
+    this.emit("frame");
+  }
+
+  stepFrame(delta: number): void {
+    this.setFrame(this.frameIndex + delta);
+  }
+
+  /** True when the object belongs to the frame being shown (unscoped objects do). */
+  inFrame(o: SceneObject): boolean {
+    const current = this.frames[this.frameIndex];
+    return o.frame === undefined || current === undefined || o.frame === current;
+  }
+
   setView(view: ActiveView): void {
     this.viewOverride = view;
     this.emit("view");
@@ -129,7 +170,7 @@ export class UiState {
   }
 
   isVisible(o: SceneObject): boolean {
-    return !this.hiddenIds.has(o.id) && !(o.group !== undefined && this.hiddenGroups.has(o.group));
+    return this.inFrame(o) && !this.hiddenIds.has(o.id) && !(o.group !== undefined && this.hiddenGroups.has(o.group));
   }
 
   setObjectVisible(id: string, visible: boolean): void {

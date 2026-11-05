@@ -47,9 +47,15 @@ header .meta:empty { display: none; }
 #status { font-size: 0.8rem; color: var(--muted); }
 #status[data-state="live"] { color: var(--ok); }
 #status[data-state="error"] { color: var(--warn); }
-.seg { display: flex; }
+.seg { display: flex; align-items: center; }
+.seg[hidden] { display: none; }
 .seg button:first-child { border-radius: 4px 0 0 4px; }
 .seg button:last-child { border-radius: 0 4px 4px 0; margin-left: -1px; }
+#frame-bar { gap: 0.3rem; }
+#frame-bar button { border-radius: 4px; }
+#frame-bar button:last-child { margin-left: 0; }
+#frame-slider { width: 100px; accent-color: var(--accent, #3a7cc2); }
+#frame-label { min-width: 5.5em; white-space: nowrap; }
 .check { display: flex; gap: 0.3rem; align-items: center; white-space: nowrap; }
 
 main { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 260px; }

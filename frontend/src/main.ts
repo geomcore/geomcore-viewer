@@ -62,6 +62,11 @@ const header = { title: byId("title"), status: byId("status"), run: byId("run"),
 const stage = byId("stage");
 const autofit = byId<HTMLInputElement>("autofit");
 const labels = byId<HTMLInputElement>("labels");
+const frameBar = byId("frame-bar");
+const frameSlider = byId<HTMLInputElement>("frame-slider");
+const frameLabel = byId("frame-label");
+const framePrev = byId<HTMLButtonElement>("frame-prev");
+const frameNext = byId<HTMLButtonElement>("frame-next");
 const shell = new FrameScheduler(() => {
   renderHeader(store, runs, header, failures);
   const view = usableView(ui.activeView(store.view, store.objects.values()), available);
@@ -74,11 +79,20 @@ const shell = new FrameScheduler(() => {
   document.body.classList.toggle("presenting", ui.presenting);
   autofit.checked = ui.autoFit;
   labels.checked = ui.showLabels;
+  frameBar.hidden = ui.frames.length <= 1;
+  frameSlider.max = String(Math.max(0, ui.frames.length - 1));
+  frameSlider.value = String(ui.frameIndex);
+  frameLabel.textContent = ui.frames[ui.frameIndex] ?? "";
+  framePrev.disabled = ui.frameIndex <= 0;
+  frameNext.disabled = ui.frameIndex >= ui.frames.length - 1;
   view2d.setActive(view === "2d");
   view3d?.setActive(view === "3d");
   uvpane?.setActive(view === "3d");
 });
-store.onChange(() => shell.request());
+store.onChange((ev) => {
+  if (ev.type === "reset" || ev.type === "upsert") ui.setFrames(store.frames);
+  shell.request();
+});
 ui.onChange((ev) => {
   if (ev === "theme") applyTheme(ui.theme);
   shell.request();
@@ -103,6 +117,9 @@ byId("theme").addEventListener("click", () => ui.toggleTheme());
 byId("present").addEventListener("click", present);
 autofit.addEventListener("change", () => ui.setAutoFit(autofit.checked)); // turning it on refits both views
 labels.addEventListener("change", () => ui.setShowLabels(labels.checked));
+frameSlider.addEventListener("input", () => ui.setFrame(Number(frameSlider.value)));
+framePrev.addEventListener("click", () => ui.stepFrame(-1));
+frameNext.addEventListener("click", () => ui.stepFrame(1));
 byId("clear").addEventListener("click", () => void store.clearAll());
 mountKeys({
   fit,
@@ -111,6 +128,8 @@ mountKeys({
   view2d: () => chooseView("2d"),
   view3d: () => chooseView("3d"),
   uvpane: () => ui.toggleUvPane(),
+  framePrev: () => ui.stepFrame(-1),
+  frameNext: () => ui.stepFrame(1),
   escape: () => (ui.presenting ? ui.setPresenting(false) : ui.select(null)),
 });
 

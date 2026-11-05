@@ -87,7 +87,9 @@ class Viewer:
         self.open_browser, self.spawn = open_browser, spawn
         self.run = uuid.uuid4().hex[:12]
         self.objects: dict[str, dict] = {}
-        self._families: dict[str, list[str]] = {}  # label → ids its last add produced
+        self.frames: list[str] = []  # frame names in the order they were opened
+        self._frame: str | None = None  # the frame being filled, inside `with view.frame(...)`
+        self._families: dict[tuple, list[str]] = {}  # (frame, label) → ids its last add produced
         self._unsent: list[str] = []
         self._pending_removals: list[str] = []  # deletes the server has not acknowledged yet
         self._pending_clear = False
@@ -188,6 +190,22 @@ class Viewer:
         return self._commit(_labelled_geoms(geoms, label), label, group, options)
 
     @contextmanager
+    def frame(self, name: str):
+        """A lesson frame: objects added inside belong to ``name``. The page shows one frame at a
+        time (a slider and ←/→), so a parameter can be re-drawn per value instead of piling the
+        states on top of each other. Objects added outside any frame stay in every frame."""
+        name = str(name)
+        previous = self._frame
+        if name not in self.frames:
+            self.frames.append(name)
+        self._frame = name
+        try:
+            yield self
+        finally:
+            self._frame = previous
+            self._flush()  # the frame list may be new, even when nothing else changed
+
+    @contextmanager
     def batch(self):
         """Send everything added inside the block in one request, instead of one per call:
         ``with view.batch(): view.arrow(...) ...``."""
@@ -212,10 +230,11 @@ class Viewer:
             self._unsent.append(obj["id"])
         ids = list(dict.fromkeys(obj["id"] for obj in objects))
         if label is not None:
-            for stale in self._families.get(label, []):
+            family = (self._frame, label)
+            for stale in self._families.get(family, []):
                 if stale not in ids:
                     self._remove(stale)
-            self._families[label] = ids
+            self._families[family] = ids
         self._flush()
         handles = [Handle(self, i) for i in ids]
         return handles[0] if len(handles) == 1 else handles
@@ -223,6 +242,8 @@ class Viewer:
     def _build(self, part: dict, style: dict, group, extras: dict, u, v) -> dict:
         geom = part["geom"]
         object_id = part.get("key") or part["label"] or self._auto_id()
+        if self._frame is not None:
+            object_id = f"{self._frame}·{object_id}"  # labels may repeat across frames; ids must not
         if geom["type"] in SURFACE_TYPES and missing_window(geom):
             others = (o["geom"] for o in self.objects.values() if o["id"] != object_id)
             geom = with_window(geom, scene_extent(others), u, v)
@@ -244,6 +265,8 @@ class Viewer:
             obj["extras"] = {**extras, **(part.get("data") or {})}
         if part.get("meta"):
             obj["meta"] = part["meta"]
+        if self._frame is not None:
+            obj["frame"] = self._frame
         _check_serializable(obj)
         return obj
 
@@ -280,6 +303,8 @@ class Viewer:
     def clear(self) -> None:
         """Empty the scene, here and in the open tab."""
         self.objects.clear()
+        self.frames.clear()
+        self._frame = None
         self._families.clear()
         self._unsent.clear()
         self._pending_removals.clear()
@@ -289,7 +314,7 @@ class Viewer:
     # -- persistence -----------------------------------------------------------
     def scene(self) -> dict:
         return {"version": PROTOCOL, "title": self.title, "run": self.run, "view": self.view,
-                "objects": list(self.objects.values())}
+                "frames": list(self.frames), "objects": list(self.objects.values())}
 
     def save(self, path: str | Path) -> Path:
         """Write the scene as JSON (open it with ``?scene=`` or drag-drop it on the page)."""
@@ -323,7 +348,7 @@ class Viewer:
             return
         ids = list(dict.fromkeys(self._unsent))
         batch: dict = {"objects": [self.objects[i] for i in ids if i in self.objects],
-                       "title": self.title, "view": self.view}
+                       "title": self.title, "view": self.view, "frames": list(self.frames)}
         if self._resync or not self._run_sent:
             batch.update(run=self.run, keep=self.keep)
         try:

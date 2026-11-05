@@ -39,6 +39,17 @@ describe("panelModel", () => {
     expect(rows.find((r) => r.id === "note")).toEqual({ kind: "note", id: "note", text: "2 tangent points", warn: true });
   });
 
+  it("lists only the frame being shown", () => {
+    const ui = new UiState(null);
+    const a = obj("a", { type: "point", p: [0, 0, 0] }, { label: "a", frame: "one" });
+    const b = obj("b", { type: "point", p: [0, 0, 0] }, { label: "b", frame: "two" });
+    ui.setFrames(["one", "two"]);
+    const rows = (state: UiState) => panelModel(storeOf([a, b]), state).groups.flatMap((g) => g.rows);
+    expect(rows(ui).map((r) => r.id)).toEqual(["a"]);
+    ui.setFrame(1);
+    expect(rows(ui).map((r) => r.id)).toEqual(["b"]);
+  });
+
   it("reflects visibility, collapse and selection", () => {
     const ui = new UiState(null);
     ui.setGroupVisible("conics", false);

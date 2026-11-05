@@ -60,6 +60,7 @@ pre-0.39 names (`Point3D`, `Circle3D`…), so older kernels keep working.
 | `view.pcurve(curve, on=surface)` | any 2D curve — `Line2D`/`Circle2D` exactly (e.g. `cyl.curve_3d_to_uv(circle)`, or `circle.parametrize_on(cyl)` before 0.43), the rest sampled to a polyline — or `(u, v)` pairs drawn on a surface already added |
 | `view.polyline(pts)`, `view.mesh(v, i)`, `view.arrow(at, vec)`, `view.text(at, s)` | raw geometry; `polyline` takes a list of point lists, `arrow`/`text` zipped lists (a single `vec` or string repeats) |
 | `view.points(xyz, values=, colormap=, size=)`, `view.mesh(v, i, values=, colormap=)` | one point cloud / mesh, coloured per point or vertex by `values` (`viridis`, `plasma`, `turbo`, `coolwarm`, `gray`) |
+| `with view.frame("tilt 45°"): …` | a lesson frame: the page shows one frame at a time (slider and ←/→), so each parameter value keeps its own objects |
 | `with view.batch(): …` | send everything added inside the block once, not one request per call |
 | `view.clear()`, `view.save(path)`, `view.open()` | housekeeping |
 | `gv.add(...)`, `gv.clear()` | same, on the most recent viewer (handy in `pdb`) |
@@ -143,6 +144,7 @@ keys do nothing for it, and the failure stays in the header's status line.
 | `T` | light / dark theme (remembered by the browser) |
 | `2` / `3` | plane view / 3D view |
 | `U` | show / hide the (u,v) pane |
+| `←` / `→` | previous / next lesson frame (when the scene has frames) |
 | `Esc` | leave presentation mode, else clear the selection |
 
 In the plane view, hover an object for its type, label, parameter `t`, and
@@ -155,6 +157,11 @@ names them, and axis ticks stay.
 
 In 3D, result operands draw no labels of their own (they stay named on hover),
 so a figure made of several results stays readable.
+
+Lesson frames (`with view.frame("tilt 45°"): …`) appear as a slider in the
+header: the page draws the current frame and keeps the other frames' objects
+out of the views and the panel. Objects added outside a frame show in every
+frame; the same label can be reused in different frames.
 
 In 3D, drag to orbit, right-drag to pan and scroll to zoom; the toolbar
 switches between perspective and orthographic and snaps to the top, front,
