@@ -234,6 +234,50 @@ def test_clear_forgets_the_steps(server):
     assert view.steps == [] and _scene(server)["steps"] == []
 
 
+def test_an_empty_step_still_reaches_the_page(server):
+    view = make(server)
+    with view.step("empty"):
+        pass
+    assert _scene(server)["steps"] == ["empty"]
+
+
+def test_steps_do_not_nest(server):
+    view = make(server)
+    with view.step("outer"):
+        with pytest.raises(ValueError, match="do not nest"):
+            with view.step("inner"):
+                pass
+    assert view.steps == ["outer"]
+
+
+def test_clear_inside_a_step_keeps_filling_that_step(server):
+    view = make(server)
+    with view.step("a"):
+        view.clear()
+        view.add(Point3D(0, 0), label="P")
+    assert view.steps == ["a"] and view.objects["a·P"]["step"] == "a"
+    assert _scene(server)["steps"] == ["a"]
+
+
+def test_pcurve_on_a_label_inside_a_step_finds_that_steps_surface(server):
+    view = make(server)
+    with view.step("s"):
+        view.add(Plane(), label="pl", u=(0, 4), v=(0, 2))
+        view.pcurve([(0, 0), (4, 2)], on="pl", label="diag")
+    assert view.objects["s·diag"]["geom"]["surface"] == "s·pl"
+
+
+def test_a_result_redraws_an_operand_shown_only_in_another_step(server):
+    view = make(server)
+    a = Line3D(Point3D(0, 0, 0), Point3D(1, 1, 0))
+    b = Line3D(Point3D(0, 1, 0), Point3D(1, -1, 0))
+    with view.step("one"):
+        view.add(a, label="A")
+    with view.step("two"):
+        view.add(CurveCurveIntersection(a, b), label="X")
+    assert "two·X·first" in _ids(server)  # A is not on screen in step "two"
+
+
 def test_steps_are_on_the_saved_scene(tmp_path):
     view = gv.Viewer(spawn=False, open_browser=False)
     with view.step("one"):

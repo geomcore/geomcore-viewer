@@ -92,6 +92,7 @@ class Viewer:
         self.objects: dict[str, dict] = {}
         self.steps: list[str] = []  # step names in the order they were opened
         self._step: str | None = None  # the step being filled, inside `with view.step(...)`
+        self._steps_unsent = False  # the step list changed since the server last heard it
         self._families: dict[tuple, list[str]] = {}  # (step, label) → ids its last add produced
         self._unsent: list[str] = []
         self._pending_removals: list[str] = []  # deletes the server has not acknowledged yet
@@ -146,6 +147,8 @@ class Viewer:
         page draws the curve on the surface in 3D and in the (u,v) pane.
         """
         surface = on.id if isinstance(on, Handle) else on
+        if self._step is not None and f"{self._step}·{surface}" in self.objects:
+            surface = f"{self._step}·{surface}"  # a label given inside a step names that step's object
         if self.objects.get(surface, {}).get("geom", {}).get("type") not in SURFACE_TYPES:
             raise ValueError(f"pcurve: {surface!r} is not a surface in this scene (add the surface first)")
         geom = {"type": "pcurve", "surface": surface, "curve": uv_curve(curve)}
@@ -204,16 +207,19 @@ class Viewer:
     def step(self, name: str):
         """A lesson step: objects added inside belong to ``name``. The page shows one step at a
         time (a slider and ←/→), so a parameter can be re-drawn per value instead of piling the
-        states on top of each other. Objects added outside any step stay in every step."""
+        states on top of each other. Objects added outside any step stay in every step. Re-entering
+        a step's name adds to that step; steps do not nest."""
+        if self._step is not None:
+            raise ValueError(f"step({name!r}) inside step({self._step!r}): steps do not nest")
         name = str(name)
-        previous = self._step
         if name not in self.steps:
             self.steps.append(name)
+            self._steps_unsent = True
         self._step = name
         try:
             yield self
         finally:
-            self._step = previous
+            self._step = None
             self._flush()  # the step list may be new, even when nothing else changed
 
     @contextmanager
@@ -321,8 +327,9 @@ class Viewer:
     def clear(self) -> None:
         """Empty the scene, here and in the open tab."""
         self.objects.clear()
-        self.steps.clear()
-        self._step = None
+        # Inside a step, what follows still belongs to that step.
+        self.steps[:] = [self._step] if self._step is not None else []
+        self._steps_unsent = self._step is not None
         self._families.clear()
         self._unsent.clear()
         self._pending_removals.clear()
@@ -350,7 +357,8 @@ class Viewer:
         ``batch()`` block nothing is sent until the outermost block exits."""
         if self._batch_depth:
             return
-        if not (self._unsent or self._pending_removals or self._pending_clear) or not self._connect():
+        if not (self._unsent or self._steps_unsent or self._pending_removals or self._pending_clear) \
+                or not self._connect():
             return
         if self._pending_clear:
             self._pending_clear = False
@@ -362,7 +370,7 @@ class Viewer:
             if not self._request("DELETE", f"/api/objects/{quote(object_id, safe='')}", missing_ok=True):
                 self._pending_removals.insert(0, object_id)
                 return
-        if not self._unsent:
+        if not (self._unsent or self._steps_unsent):
             return
         ids = list(dict.fromkeys(self._unsent))
         batch: dict = {"objects": [self.objects[i] for i in ids if i in self.objects],
@@ -378,6 +386,7 @@ class Viewer:
         if sent:
             self._run_sent, self._resync = True, False
             self._unsent.clear()
+            self._steps_unsent = False
 
     def _connect(self) -> bool:
         if self._online:

@@ -122,6 +122,7 @@ export class Store {
       case "clear":
         this.objects.clear();
         this.problems.clear();
+        this.steps = [];
         this.emit({ type: "reset" });
         return;
     }

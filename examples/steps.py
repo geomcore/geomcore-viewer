@@ -13,7 +13,7 @@ from __future__ import annotations
 import argparse
 import math
 
-from geomcore import Frame, Point, Vector
+from geomcore import Point, Vector
 from geomcore.curves import Circle
 from geomcore.surfaces import Plane
 
