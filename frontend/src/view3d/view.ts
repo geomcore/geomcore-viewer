@@ -249,6 +249,8 @@ export class View3D {
     if (ev === "theme") {
       this.applyTheme();
       this.rebuild(); // extras and the grid take their colours from the palette
+    } else if (ev === "labels") {
+      this.labelsDirty = true;
     } else if (ev === "visibility") {
       for (const [id, b] of this.built) {
         const o = this.store.objects.get(id);
@@ -408,12 +410,14 @@ export class View3D {
     const project = this.projector();
     const px = LABEL_PX * this.widthScale;
     const texts: (Text3D & { s: [number, number] })[] = [];
-    for (const [id, b] of this.built) {
-      const o = this.store.objects.get(id);
-      if (!o || !this.ui.isVisible(o)) continue;
-      for (const t of b.draw.texts) {
-        const s = project(t.at);
-        if (s) texts.push({ ...t, s });
+    if (this.ui.showLabels) {
+      for (const [id, b] of this.built) {
+        const o = this.store.objects.get(id);
+        if (!o || !this.ui.isVisible(o)) continue;
+        for (const t of b.draw.texts) {
+          const s = project(t.at);
+          if (s) texts.push({ ...t, s });
+        }
       }
     }
     const rank = (t: Text3D) => (this.isLit(t.id) ? -1 : KIND_ORDER[t.kind]);

@@ -83,8 +83,10 @@ describe("UiState visibility and selection", () => {
     ui.setAutoFit(false);
     ui.setCollapsed("g", true);
     ui.toggleUvPane();
-    expect(seen.mock.calls.map((c) => c[0])).toEqual(["selection", "presenting", "autofit", "collapse", "uvpane"]);
+    ui.setShowLabels(false);
+    expect(seen.mock.calls.map((c) => c[0])).toEqual(["selection", "presenting", "autofit", "collapse", "uvpane", "labels"]);
     expect(ui.uvPane).toBe(false);
+    expect(ui.showLabels).toBe(false);
     expect(ui.selected).toBe("a");
     expect(ui.collapsedGroups.has("g")).toBe(true);
   });

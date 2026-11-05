@@ -61,6 +61,7 @@ const runs = new RunCounter();
 const header = { title: byId("title"), status: byId("status"), run: byId("run"), count: byId("count") };
 const stage = byId("stage");
 const autofit = byId<HTMLInputElement>("autofit");
+const labels = byId<HTMLInputElement>("labels");
 const shell = new FrameScheduler(() => {
   renderHeader(store, runs, header, failures);
   const view = usableView(ui.activeView(store.view, store.objects.values()), available);
@@ -72,6 +73,7 @@ const shell = new FrameScheduler(() => {
   byId("present").setAttribute("aria-pressed", String(ui.presenting));
   document.body.classList.toggle("presenting", ui.presenting);
   autofit.checked = ui.autoFit;
+  labels.checked = ui.showLabels;
   view2d.setActive(view === "2d");
   view3d?.setActive(view === "3d");
   uvpane?.setActive(view === "3d");
@@ -100,6 +102,7 @@ byId("view-3d").addEventListener("click", () => chooseView("3d"));
 byId("theme").addEventListener("click", () => ui.toggleTheme());
 byId("present").addEventListener("click", present);
 autofit.addEventListener("change", () => ui.setAutoFit(autofit.checked)); // turning it on refits both views
+labels.addEventListener("change", () => ui.setShowLabels(labels.checked));
 byId("clear").addEventListener("click", () => void store.clearAll());
 mountKeys({
   fit,

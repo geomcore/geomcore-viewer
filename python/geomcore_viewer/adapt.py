@@ -733,7 +733,8 @@ def _operands(result, label: str, reference_points: list, u, v, existing=(), sho
     parts = []
     for name, obj in zip(("first", "second"), operands):
         [part] = _single(obj, None, u, v)
-        parts.append({**part, "key": f"{label}·{name}", "group": label, "style": {"opacity": OPERAND_OPACITY}})
+        parts.append({**part, "key": f"{label}·{name}", "group": label, "style": {"opacity": OPERAND_OPACITY},
+                      "meta": {"operand": True}})
     points = list(reference_points)
     for part in parts:
         if not _INFINITE.get(part["geom"]["type"]):

@@ -128,6 +128,11 @@ describe("objectDraw3D", () => {
     expect(d.texts.filter((t) => t.kind === "extra")).toEqual([]); // pole/knot dots stay unlabelled
   });
 
+  it("does not label a result operand", () => {
+    const operand = obj("P·second", { type: "sphere", frame: world, r: 1 }, { meta: { operand: true } });
+    expect(objectDraw3D(operand, ctx([operand])).texts).toEqual([]);
+  });
+
   it("draws curve extras dashed and lighter-weight, with named markers", () => {
     const e = obj("E", { type: "ellipse", frame: world, a: 3, b: 2 }, { extras: { foci: true, axes: true } });
     const d = objectDraw3D(e, ctx([e]));

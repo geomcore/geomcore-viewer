@@ -50,6 +50,13 @@ describe("buildDrawList", () => {
     expect(list.texts).toMatchObject([{ key: "p:P₁", text: "P₁ (1.841, 1.62)", kind: "point" }]);
   });
 
+  it("does not label a result operand, whose label stays in hover", () => {
+    const operand = obj("P·first", { type: "point", p: [1, 0, 0] }, { meta: { operand: true } });
+    const list = buildDrawList([operand], cam, opts());
+    expect(list.texts).toEqual([]);
+    expect(list.dots).toHaveLength(1); // the geometry is still drawn
+  });
+
   it("skips hidden, non-planar and note objects", () => {
     const objects = [
       obj("hidden", { type: "point", p: [0, 0, 0] }),
