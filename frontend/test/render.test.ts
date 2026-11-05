@@ -50,6 +50,25 @@ describe("buildDrawList", () => {
     expect(list.texts).toMatchObject([{ key: "p:P₁", text: "P₁ (1.841, 1.62)", kind: "point" }]);
   });
 
+  it("keeps a tangent hit's name next to its coordinates", () => {
+    const hit = obj("P·hit1", { type: "point", p: [1.8412, 1.62, 0] }, { meta: { tag: "hit", tangent: true } });
+    expect(buildDrawList([hit], cam, opts()).texts).toMatchObject([{ text: "P·hit1 tangent (1.841, 1.62)" }]);
+  });
+
+  it("colours a point cloud's dots by its scalars", () => {
+    const cloud = obj("C", { type: "points", positions: [[0, 0, 0], [1, 0, 0]], values: [0, 1] });
+    const dots = buildDrawList([cloud], cam, opts()).dots;
+    expect(dots).toHaveLength(2);
+    expect(dots[0].color).not.toBe(dots[1].color);
+  });
+
+  it("does not label a result operand, whose label stays in hover", () => {
+    const operand = obj("P·first", { type: "point", p: [1, 0, 0] }, { meta: { operand: true } });
+    const list = buildDrawList([operand], cam, opts());
+    expect(list.texts).toEqual([]);
+    expect(list.dots).toHaveLength(1); // the geometry is still drawn
+  });
+
   it("skips hidden, non-planar and note objects", () => {
     const objects = [
       obj("hidden", { type: "point", p: [0, 0, 0] }),
@@ -90,6 +109,18 @@ describe("buildDrawList", () => {
     expect(extra.paths.length).toBeGreaterThan(20); // two axes cut into 7 px dashes
     expect(list.dots.filter((d) => d.hollow).map((d) => d.at)).toEqual([[400 + 100 * Math.sqrt(5), 300], [400 - 100 * Math.sqrt(5), 300]]);
     expect(list.texts.filter((t) => t.kind === "extra").map((t) => t.text)).toEqual(["F₁", "F₂"]);
+  });
+
+  it("draws client-computed extras (control polygon, knots, comb) in the plane view too", () => {
+    const b = obj("B", { type: "polyline", points: [[0, 0, 0], [1, 0, 0]] }, {
+      style: { color: "#d1495b" },
+      extras: { poles: [[0, 0, 0], [0.5, 1, 0], [1, 0, 0]], knots: [[0.5, 0, 0]], comb: { teeth: [[[0.5, 0.5, 0], [0.5, 0, 0]]] } },
+    });
+    const list = buildDrawList([b], cam, opts());
+    const extra = list.strokes.find((s) => s.extra)!;
+    expect(extra.color).toBe(mixHex("#d1495b", PALETTES.light.bg, EXTRA_MIX));
+    expect(extra.paths.flat().some((p) => p[1] === 300 - 100)).toBe(true); // the control polygon's apex (0.5, 1)
+    expect(list.dots.filter((d) => d.hollow)).toHaveLength(4); // three poles and one knot
   });
 
   it("widens lines by half in presentation mode and more when highlighted", () => {

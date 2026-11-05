@@ -13,6 +13,7 @@ The viewer never computes intersections or any other geometric query.
   "title": "Ellipse ∩ circle",
   "run": "a1b2c3d4e5f6",
   "view": "auto",
+  "steps": ["tilt 0°", "tilt 45°"],
   "objects": [
     {
       "id": "E", "label": "E", "group": "conics", "source": "Ellipse3D",
@@ -35,13 +36,16 @@ The viewer never computes intersections or any other geometric query.
 | `label` | no | display name (panel, point labels) |
 | `group` | no | panel grouping / visibility toggle |
 | `source` | no | client-side type name, e.g. `Ellipse3D` |
+| `step` | no | lesson step the object belongs to; the page shows one step at a time, objects without a step show in every step |
 | `style` | no | `color` (CSS), `width` (px), `dashed`, `opacity` (0–1; surfaces and meshes default to 0.45 when the scene holds a curve, polyline or pcurve, else 1) |
-| `extras` | no | curves: `foci`, `center`, `axes`, `asymptotes`, `directrix`, `vertex`; surfaces: `isolines: [nu, nv]` (or `true` for 12 × 6; drawn at the middle of each cell of the window), `wire` (lines only: the isolines, 24 × 12 by default, and the window's edges), `hidden` (`"dashed"` or `"hide"`: lines of any object behind the surface, its own included, are drawn dashed and faint, or not at all; see [Hidden lines](#hidden-lines-and-silhouettes)), `silhouette: true` (the surface's outline as seen from the camera, redrawn as it moves). Unknown extras, and unknown values of these, are ignored. |
-| `meta` | no | free-form client data. The Python client sets `tag` (the intersection result's tag, e.g. `"points"`) and `params` (the numbers of the hit, e.g. `[t, s]` for `(t, P, s)`; a non-finite one is `null`); the 2D tooltip shows `params`. |
+| `extras` | no | curves: `foci`, `center`, `axes`, `asymptotes`, `directrix`, `vertex`; B-spline/Bézier curves: `poles` (array of points → control polygon and dots), `knots` (array of points → dots), `comb` (`{scale, teeth: [[base, tip], …]}` → teeth and their envelope); surfaces: `isolines: [nu, nv]` (or `true` for 12 × 6; drawn at the middle of each cell of the window), `wire` (lines only: the isolines, 24 × 12 by default, and the window's edges), `normals` (array of `[base, tip]` segments), `hidden` (`"dashed"` or `"hide"`: lines of any object behind the surface, its own included, are drawn dashed and faint, or not at all; see [Hidden lines](#hidden-lines-and-silhouettes)), `silhouette: true` (the surface's outline as seen from the camera, redrawn as it moves). The Python client computes the point/segment arrays from the exact geomcore object (`poles=True`, `knots=True`, `comb=scale`, `normals=n`); the page draws them as extras. Unknown extras are ignored. |
+| `meta` | no | free-form client data. The Python client sets `tag` (the intersection result's tag, e.g. `"points"`) and `params` (the numbers of the hit, e.g. `[t, s]` for `(t, P, s)`; a non-finite one is `null`); the 2D tooltip shows `params`. `operand: true` marks a result's operand or projection target: the views draw no label for it (hovering still names it). `tangent: true` marks a tangent hit or a tangency contact point (`tag: "contact"`): the panel and the labels show "tangent" next to the hit's name. |
 
-`view` is `"auto"`, `"2d"` or `"3d"`. Vectors are `[x, y, z]`; a
-2-component vector is read as `[x, y, 0]`. Every `frame` carries all three
-unit axes `o, x, y, z` (right-handed, orthonormal).
+`view` is `"auto"`, `"2d"` or `"3d"`. `steps` is the ordered list of
+lesson steps (the page's slider and ←/→ browse it); a new run with
+`keep: false` clears it. Vectors are `[x, y, z]`; a 2-component vector is
+read as `[x, y, 0]`. Every `frame` carries all three unit axes `o, x, y, z`
+(right-handed, orthonormal).
 
 ## Geometry types
 
@@ -58,14 +62,16 @@ unit axes `o, x, y, z` (right-handed, orthonormal).
 | `cone` | `frame`, `semi_angle`, `ref_radius` | `R = ref_radius + v sin φ`; `o + R cos u·x + R sin u·y + v cos φ·z` |
 | `sphere` | `frame`, `r` | `o + r cos v cos u·x + r cos v sin u·y + r sin v·z` |
 | `torus` | `frame`, `R`, `r` | `ρ = R + r cos v`; `o + ρ cos u·x + ρ sin u·y + r sin v·z` |
-| `mesh` | `vertices`, `indices` | triangles; `indices.length % 3 == 0` |
+| `extrusion` | `profile`, `direction` | `profile(u) + v·direction` |
+| `revolution` | `profile`, `origin`, `direction` | `profile(v)` rotated about the axis (`origin`, `direction`) by `u` (Rodrigues); u is the angle |
+| `mesh` | `vertices`, `indices`, `values?`, `colormap?` | triangles; `indices.length % 3 == 0` |
 | `box` | `min`, `max` | axis-aligned box between the two corners (either order); drawn as its twelve edges |
 | `point` | `p` | — |
-| `points` | `positions`, `size?` | point cloud |
+| `points` | `positions`, `size?`, `values?`, `colormap?` | point cloud |
 | `arrow` | `at`, `vec` | — |
 | `text` | `at`, `text` | — |
 | `note` | `text`, `level?` (`info` / `warn`) | panel only, e.g. `P: ∅ (parallel)` |
-| `pcurve` | `surface`, `curve` | `S(q(t))`: `surface` is a surface object's `id` (`plane`, `cylinder`, `cone`, `sphere`, `torus` or `bspline_surface`); `curve` is a `line`, `circle` (either may carry `range`) or `polyline` in z = 0 whose x is u and y is v |
+| `pcurve` | `surface`, `curve` | `S(q(t))`: `surface` is a surface object's `id` (any surface type above: not a `mesh`); `curve` is a `line`, `circle` (either may carry `range`) or `polyline` in z = 0 whose x is u and y is v |
 
 B-splines travel exact, as geomcore stores them: a `bspline_curve` carries
 `degree`, `poles` (points), `weights` (one per pole; absent when the curve is
@@ -85,6 +91,23 @@ when periodic); an explicit `window` on a `bspline_surface` shows part of it.
 Pole counts follow the kernel's rules (`n = Σ mults − degree − 1`, or
 `Σ mults − mults[last]` when periodic). Clients whose geomcore binding has no
 B-spline getters send a `polyline` / `mesh` instead.
+
+`extrusion.profile` and `revolution.profile` are any curve type above or a
+`polyline`. A polyline profile may carry `range: [t0, t1]` (t0 ≠ t1): its
+points are then spaced evenly over that parameter interval, which is how a
+sampled profile keeps the kernel's parametrization.
+Without `range` its parameter is the point index (segment `i` spans
+`t ∈ [i, i + 1]`, as in a `pcurve`). A revolution's `direction` is the axis
+direction and must be non-zero.
+
+### Scalar colouring
+
+`points` and `mesh` may carry `values`: one finite number per point (or per
+vertex, for a mesh), the same length as `positions` / `vertices`, with a
+`colormap` name. The viewer normalizes the values over the object's own
+minimum…maximum (a constant field sits in the middle) and colours each dot or
+vertex. Maps: `viridis` (the default), `plasma`, `turbo`, `coolwarm`, `gray`;
+an unknown name falls back to viridis. `colormap` without `values` is rejected.
 
 Radii (`r`, `a`, `b`, `R`) must be positive and `f` non-zero. A curve that is
 a single point — the radius-zero circle or the B-spline with coinciding poles
@@ -115,15 +138,20 @@ the lines behind them. The plane view ignores both extras, and so does a
   segments, arcs, conic pieces and B-spline pieces stay exact.
 - Surfaces carry `window: {"u": [a, b], "v": [a, b]}`. Closed directions
   default to their full period (`cylinder`/`cone` u, `sphere` u and
-  v ∈ [-π/2, π/2], `torus` u and v); infinite directions (`plane` u/v,
-  `cylinder`/`cone` v) should always be given. A `bspline_surface` has a
-  finite domain by construction: the viewer draws its knot domain unless an
-  explicit `window` narrows it. (A `mesh` baked from a B-spline by a client
-  without B-spline getters has no domain: its caller passes `u=`/`v=` to
-  select what was sampled.) When one is missing the
-  viewer draws it over ±the half-size of the scene's view box (1.5 × the
-  scene's half-extent, at least 1) and does not flag the object. The Python
-  client always fills `window` itself, from the objects already added.
+  v ∈ [-π/2, π/2], `torus` u and v, `revolution` u); infinite directions
+  (`plane` u/v, `cylinder`/`cone` v, `extrusion` u/v for an unbounded
+  profile and v, `revolution` v for an unbounded profile) should always be
+  given. A `bspline_surface` has a finite domain by construction: the viewer
+  draws its knot domain unless an explicit `window` narrows it. (A `mesh`
+  baked from a B-spline by a client without B-spline getters has no domain:
+  its caller passes `u=`/`v=` to select what was sampled.) When one is missing the viewer draws it over ±the half-size of the
+  scene's view box (1.5 × the scene's half-extent, at least 1) and does not
+  flag the object. A swept profile's parameter is not a length, so that
+  half-size is converted: ÷|d| for a `line`, `min(h, 2√(|f|·h))` for a
+  `parabola`, `asinh(h / max(a, b))` for a `hyperbola`, and an extrusion's
+  sweep v is ÷|direction|. The Python client always fills `window` itself, from the
+  objects already added (and from a profile's own bounds for
+  `extrusion`/`revolution`: u for an extrusion, v for a revolution).
 - A `pcurve` takes its surface's window. A `line` or `circle` is clipped
   to it in the directions that do not wrap, so a helix on a cylinder winds
   round the seam until it leaves the v window; one those leave unbounded

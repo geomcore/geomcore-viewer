@@ -294,7 +294,9 @@ export class View3D {
     if (ev === "theme") {
       this.applyTheme();
       this.rebuild(); // extras and the grid take their colours from the palette
-    } else if (ev === "visibility") {
+    } else if (ev === "labels") {
+      this.labelsDirty = true;
+    } else if (ev === "visibility" || ev === "step") {
       if (this.occluding([...this.store.objects.values()]) !== this.occludes) {
         this.rebuild();
       } else {
@@ -494,12 +496,14 @@ export class View3D {
     const project = this.projector();
     const px = LABEL_PX * this.widthScale;
     const texts: (Text3D & { s: [number, number] })[] = [];
-    for (const [id, b] of this.built) {
-      const o = this.store.objects.get(id);
-      if (!o || !this.ui.isVisible(o)) continue;
-      for (const t of b.draw.texts) {
-        const s = project(t.at);
-        if (s) texts.push({ ...t, s });
+    if (this.ui.showLabels) {
+      for (const [id, b] of this.built) {
+        const o = this.store.objects.get(id);
+        if (!o || !this.ui.isVisible(o)) continue;
+        for (const t of b.draw.texts) {
+          const s = project(t.at);
+          if (s) texts.push({ ...t, s });
+        }
       }
     }
     const rank = (t: Text3D) => (this.isLit(t.id) ? -1 : KIND_ORDER[t.kind]);
@@ -599,9 +603,9 @@ export class View3D {
     b.meshes.push(...b.lines.map((l) => l.mesh));
     if (draw.surface) {
       const s = draw.surface;
-      const mesh = this.triMesh(`s-${o.id}`, s.mesh);
+      const mesh = this.triMesh(`s-${o.id}`, s.mesh, s.colors);
       const mat = new BABYLON.StandardMaterial(`m-${o.id}`, this.scene);
-      mat.diffuseColor = color3(s.color);
+      mat.diffuseColor = s.colors ? new BABYLON.Color3(1, 1, 1) : color3(s.color);
       mat.specularColor = new BABYLON.Color3(0.2, 0.2, 0.2);
       mat.backFaceCulling = false;
       mat.twoSidedLighting = true;
@@ -670,7 +674,7 @@ export class View3D {
     return mesh;
   }
 
-  private triMesh(name: string, tri: TriMesh): BABYLON.Mesh {
+  private triMesh(name: string, tri: TriMesh, colors?: number[]): BABYLON.Mesh {
     const mesh = new BABYLON.Mesh(name, this.scene);
     const data = new BABYLON.VertexData();
     data.positions = tri.positions;
@@ -678,7 +682,9 @@ export class View3D {
     if (tri.uvs.length) data.uvs = tri.uvs;
     data.normals = [];
     BABYLON.VertexData.ComputeNormals(tri.positions, tri.indices, data.normals);
+    if (colors) data.colors = colors;
     data.applyToMesh(mesh);
+    mesh.useVertexColors = colors !== undefined;
     return mesh;
   }
 
@@ -709,8 +715,9 @@ export class View3D {
     const mesh = BABYLON.MeshBuilder.CreateSphere(name, { diameter: 1, segments: 8 }, this.scene);
     const mat = new BABYLON.StandardMaterial(`${name}-m`, this.scene);
     const color = color3(part.extra ? mixHex(part.color, this.palette.bg, EXTRA_MIX) : part.color);
-    mat.diffuseColor = color;
-    mat.emissiveColor = color.scale(0.6);
+    // A scalar-coloured cloud tints every instance: white diffuse lets the instance colours through.
+    mat.diffuseColor = part.colors ? new BABYLON.Color3(1, 1, 1) : color;
+    mat.emissiveColor = part.colors ? color3("#000000") : color.scale(0.6);
     mat.alpha = part.alpha;
     mesh.material = mat;
     mesh.isPickable = false;
@@ -718,6 +725,14 @@ export class View3D {
     const matrices = new Float32Array(16 * part.at.length);
     part.at.forEach((p, i) => BABYLON.Matrix.Translation(p[0], p[1], p[2]).copyToArray(matrices, 16 * i));
     mesh.thinInstanceSetBuffer("matrix", matrices, 16, false);
+    if (part.colors?.length === part.at.length) {
+      const colors = new Float32Array(4 * part.at.length);
+      part.colors.forEach((hex, i) => {
+        const c = color3(hex);
+        colors.set([c.r, c.g, c.b, 1], 4 * i);
+      });
+      mesh.thinInstanceSetBuffer("color", colors, 4, false);
+    }
     return { mesh, part, matrices };
   }
 

@@ -2,7 +2,8 @@
 
 Run:   python examples/pcurve.py            (press U in the 3D view to toggle the (u,v) pane)
 Save:  python examples/pcurve.py --save frontend/e2e/scenes/pcurve.json
-Needs geomcore (pip install geomcore, or PYTHONPATH=../geomcore/geomcore-py).
+Needs geomcore (pip install geomcore, or PYTHONPATH=../geomcore/geomcore-py); the examples use
+the current class names, geomcore 0.39 or later.
 """
 
 from __future__ import annotations
@@ -10,8 +11,8 @@ from __future__ import annotations
 import argparse
 import math
 
-from geomcore import Point2D, Point3D, Vector2D, Vector3D
-from geomcore.curves import Circle3D, Line2D
+from geomcore import Point, Point2D, Vector, Vector2D
+from geomcore.curves import Circle, Line2D
 from geomcore.surfaces import Cylinder
 
 import geomcore_viewer as gv
@@ -22,12 +23,13 @@ args = parser.parse_args()
 
 view = gv.Viewer("Curves on a cylinder", spawn=args.save is None)
 
-Y = Cylinder(Point3D.origin(), Vector3D.unit_z(), 2.0)
+Y = Cylinder(Point.origin(), Vector.unit_z(), 2.0)
 cyl = view.add(Y, label="Y", v=(-1.0, 4.0))
 
 # A circle of the cylinder, handed over as its (u, v) image: the line v = 1.5.
-ring = Circle3D(Point3D(0.0, 0.0, 1.5), Vector3D.unit_z(), 2.0)
-view.pcurve(ring.parametrize_on(Y), on=cyl, label="ring")
+ring = Circle(Point(0.0, 0.0, 1.5), Vector.unit_z(), 2.0)
+ring_uv = ring.parametrize_on(Y) if hasattr(ring, "parametrize_on") else Y.curve_3d_to_uv(ring)
+view.pcurve(ring_uv, on=cyl, label="ring")
 
 # A helix: the line v = u / 4 in (u, v). Unbounded, it is drawn where it crosses the window v ∈ [-1, 4].
 view.pcurve(Line2D(Point2D(0.0, 0.0), Vector2D(1.0, 0.25)), on=cyl, label="helix")

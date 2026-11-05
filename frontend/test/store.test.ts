@@ -51,6 +51,14 @@ describe("Store.apply", () => {
     expect(ids(store)).toEqual([]);
     expect(events).toEqual(["remove", "reset"]);
   });
+
+  it("forgets the steps when the page is cleared", () => {
+    const { store } = storeWith("a");
+    store.apply({ type: "upsert", objects: [], steps: ["one", "two"] });
+    expect(store.steps).toEqual(["one", "two"]);
+    store.apply({ type: "clear" });
+    expect(store.steps).toEqual([]);
+  });
 });
 
 describe("Store.loadUrl", () => {

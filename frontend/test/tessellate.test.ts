@@ -87,6 +87,20 @@ describe("surfaceGrid", () => {
     expect(torus).toMatchObject({ nu: arcSegments(2 * Math.PI, 4, 1e-3), nv: arcSegments(2 * Math.PI, 1, 1e-3) });
     expect(surfaceGrid({ type: "plane", frame: world }, 5, 1e-3)).toMatchObject({ u: [-5, 5], assumed: true });
   });
+
+  it("follows an extrusion's profile and a revolution's arm", () => {
+    const profile = { type: "polyline" as const, points: [[0, 0, 0], [1, 0, 0], [2, 0, 0], [3, 0, 0]] as Vec3[] };
+    expect(surfaceGrid({ type: "extrusion", profile, direction: [0, 1, 0], window: { u: [0, 3], v: [0, 1] } }, 5, 1e-3))
+      .toMatchObject({ nu: 3, nv: 1 });
+    const extrusionOfCircle = surfaceGrid(
+      { type: "extrusion", profile: { type: "circle", frame: world, r: 2 }, direction: [0, 0, 1], window: { v: [0, 1] } },
+      5, 1e-3);
+    expect(extrusionOfCircle).toMatchObject({ nu: arcSegments(2 * Math.PI, 2, 1e-3), nv: 1 });
+    const revolution = surfaceGrid(
+      { type: "revolution", profile: { type: "line", o: [1, 0, 0], d: [0, 0, 1] }, origin: [0, 0, 0], direction: [0, 0, 1], window: { v: [0, 2] } },
+      5, 1e-3);
+    expect(revolution).toMatchObject({ nu: arcSegments(2 * Math.PI, 1, 1e-3), nv: 1 });
+  });
 });
 
 describe("tessellateSurface", () => {

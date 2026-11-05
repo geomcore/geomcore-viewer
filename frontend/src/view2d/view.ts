@@ -264,6 +264,7 @@ export class View2D {
 
   /** Object labels where they do not overlap (spec §5.2), as DOM items. */
   private placeTexts(): BoxedLabel[] {
+    if (!this.ui.showLabels) return [];
     const px = LABEL_PX * this.widthScale;
     const requests = this.list.texts.map((t) => ({
       key: t.key,
