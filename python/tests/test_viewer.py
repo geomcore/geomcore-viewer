@@ -71,6 +71,17 @@ def test_a_result_reuses_operands_already_in_the_scene(server):
     assert not any(i.startswith("Y·first") or i.startswith("Y·second") for i in ids)
 
 
+def test_re_adding_a_result_under_its_label_keeps_its_operands(server):
+    """The label's own family is being replaced, so its operands must not count as already shown."""
+    view = make(server)
+    a = Line3D(Point3D(0, 0, 0), Point3D(1, 1, 0))
+    b = Line3D(Point3D(0, 1, 0), Point3D(1, -1, 0))
+    view.add(CurveCurveIntersection(a, b), label="X")
+    view.add(CurveCurveIntersection(a, b), label="X")
+    ids = _ids(server)
+    assert "X·first" in ids and "X·second" in ids
+
+
 @pytest.fixture
 def server(tmp_path):
     srv = Server(tmp_path, port=0).start()
