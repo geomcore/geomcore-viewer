@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { evalCurve } from "../src/geom/curves";
-import { Extras, LineGeom, curveExtras } from "../src/geom/extras";
+import { Extras, LineGeom, curveExtras, dataExtras } from "../src/geom/extras";
 import type { CurveGeom } from "../src/geom/types";
 import type { Frame, Vec3 } from "../src/geom/vec";
 
@@ -86,5 +86,36 @@ describe("curveExtras", () => {
     expect(curveExtras({ type: "line", o: [0, 0, 0], d: [1, 0, 0] }, ALL)).toEqual({ lines: [], points: [] });
     const g: CurveGeom = { type: "ellipse", frame: world, a: 3, b: 2 };
     expect(curveExtras(g, { foci: false, isolines: [4, 4], asymptotes: true })).toEqual({ lines: [], points: [] });
+  });
+});
+
+describe("dataExtras", () => {
+  it("draws a control polygon and its poles", () => {
+    const e = dataExtras({ poles: [[0, 0, 0], [1, 2], [3, 0, 0]] });
+    expect(e.paths).toEqual([[[0, 0, 0], [1, 2, 0], [3, 0, 0]]]);
+    expect(e.points.map((p) => p.p)).toEqual([[0, 0, 0], [1, 2, 0], [3, 0, 0]]);
+    expect(e.points.every((p) => p.name === "")).toBe(true);
+  });
+
+  it("draws knot points, comb teeth with their envelope, and normal segments", () => {
+    const e = dataExtras({
+      knots: [[0.5, 0, 0]],
+      comb: { scale: 0.5, teeth: [[[0, 0, 0], [0, 1, 0]], [[1, 0, 0], [1, 2, 0]], [[2, 0, 0], [2, 0, 0]]] },
+      normals: [[[0, 0, 0], [0, 0, 1]]],
+    });
+    // two non-degenerate teeth, their envelope, and the normal segment
+    expect(e.paths).toEqual([
+      [[0, 0, 0], [0, 1, 0]],
+      [[1, 0, 0], [1, 2, 0]],
+      [[0, 1, 0], [1, 2, 0]],
+      [[0, 0, 0], [0, 0, 1]],
+    ]);
+    expect(e.points.map((p) => p.p)).toEqual([[0.5, 0, 0]]);
+  });
+
+  it("ignores missing and malformed data", () => {
+    expect(dataExtras({ foci: true })).toEqual({ lines: [], points: [], paths: [] });
+    expect(dataExtras({ poles: "nope", knots: [["a"]], comb: { teeth: [[[0, 0], [1]]] }, normals: [null] }))
+      .toEqual({ lines: [], points: [], paths: [] });
   });
 });

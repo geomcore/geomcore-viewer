@@ -7,6 +7,58 @@ export type LineGeom = Extract<CurveGeom, { type: "line" }>;
 export interface Extras {
   lines: LineGeom[];
   points: { p: Vec3; name: string }[];
+  /** Extra polylines: a control polygon, comb teeth and envelope, normal segments. */
+  paths?: Vec3[][];
+}
+
+/** A `[x, y, z]` array from client data, 2-component vectors padded with z = 0. */
+function asVec3(v: unknown): Vec3 | null {
+  if (!Array.isArray(v) || (v.length !== 2 && v.length !== 3)) return null;
+  if (!v.every((x) => typeof x === "number" && Number.isFinite(x))) return null;
+  return [v[0], v[1], v.length === 3 ? v[2] : 0];
+}
+
+/**
+ * Extras whose data the client computes and sends (protocol `extras.poles`, `knots`, `comb`,
+ * `normals`): the page only receives sampled geometry, so the control net, knot points,
+ * curvature combs and normals come pre-computed. Missing or malformed data gives nothing.
+ */
+export function dataExtras(wanted: Record<string, unknown>): Extras {
+  const out: Extras = { lines: [], points: [], paths: [] };
+  const path = (pts: Vec3[]): void => {
+    out.paths!.push(pts);
+  };
+  const points = (value: unknown): Vec3[] =>
+    Array.isArray(value) ? value.map(asVec3).filter((p): p is Vec3 => p !== null) : [];
+
+  const poles = points(wanted.poles);
+  if (poles.length) {
+    if (poles.length >= 2) path(poles);
+    for (const p of poles) out.points.push({ p, name: "" });
+  }
+  for (const p of points(wanted.knots)) out.points.push({ p, name: "" });
+
+  const comb = wanted.comb;
+  if (comb !== null && typeof comb === "object") {
+    const teeth = Array.isArray((comb as { teeth?: unknown }).teeth) ? (comb as { teeth: unknown[] }).teeth : [];
+    const tips: Vec3[] = [];
+    for (const tooth of teeth) {
+      if (!Array.isArray(tooth) || tooth.length !== 2) continue;
+      const [a, b] = tooth.map(asVec3);
+      if (!a || !b) continue;
+      if (Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]) === 0) continue;
+      path([a, b]);
+      tips.push(b);
+    }
+    if (tips.length >= 2) path(tips);
+  }
+
+  for (const pair of Array.isArray(wanted.normals) ? wanted.normals : []) {
+    if (!Array.isArray(pair) || pair.length !== 2) continue;
+    const [a, b] = pair.map(asVec3);
+    if (a && b) path([a, b]);
+  }
+  return out;
 }
 
 /**

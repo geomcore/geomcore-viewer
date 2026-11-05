@@ -1,6 +1,6 @@
 // Scene protocol v2: types, validation and v1 migration. Mirrors protocol/SCENE.md.
 import { inPlaneZ0 } from "./geom/planar";
-import { CURVE_TYPES, Geom, SURFACE_TYPES, UvCurve } from "./geom/types";
+import { CURVE_TYPES, Geom, Range, SURFACE_TYPES, UvCurve } from "./geom/types";
 import type { Vec3 } from "./geom/vec";
 
 export const PROTOCOL = 2;
@@ -18,6 +18,8 @@ export interface SceneObject {
   label?: string;
   group?: string;
   source?: string;
+  /** The lesson step it belongs to; objects without one show in every step. */
+  step?: string;
   style?: Style;
   extras?: Record<string, unknown>;
   meta?: Record<string, unknown>;
@@ -30,6 +32,8 @@ export interface SceneDoc {
   title: string;
   run: string | null;
   view: ViewMode;
+  /** Step names in order, when the scene is a lesson with parameters. */
+  steps?: string[];
   objects: SceneObject[];
 }
 
@@ -41,7 +45,7 @@ export interface Problem {
 export type ServerEvent =
   | { type: "scene"; doc: unknown }
   | { type: "run"; run: string; keep: boolean }
-  | { type: "upsert"; objects: unknown[]; title?: string; view?: string }
+  | { type: "upsert"; objects: unknown[]; title?: string; view?: string; steps?: unknown }
   | { type: "remove"; id: string }
   | { type: "clear" };
 
@@ -68,6 +72,7 @@ const FIELDS: Record<string, Record<string, FieldKind>> = {
 };
 const POSITIVE = ["r", "a", "b", "R"];
 const UV_CURVES: ReadonlySet<string> = new Set(["line", "circle", "polyline"]);
+const PROFILE_TYPES: ReadonlySet<string> = new Set([...CURVE_TYPES, "polyline"]);
 const VIEWS: ReadonlySet<string> = new Set(["auto", "2d", "3d"]);
 
 const finite = (x: unknown): x is number => typeof x === "number" && Number.isFinite(x);
@@ -116,6 +121,7 @@ function validWindow(w: unknown): boolean {
 function parseGeom(g: Record<string, unknown>): Geom | string {
   const type = g.type as string;
   if (type === "pcurve") return parsePcurve(g);
+  if (type === "extrusion" || type === "revolution") return parseSweepSurface(type, g);
   const fields = Object.prototype.hasOwnProperty.call(FIELDS, type) ? FIELDS[type] : undefined;
   if (!fields) return `unknown type "${type}"`;
   const geom: Record<string, unknown> = { ...g };
@@ -135,10 +141,55 @@ function parseGeom(g: Record<string, unknown>): Geom | string {
     const idx = geom.indices as number[];
     if (idx.length % 3 !== 0 || idx.some((i) => i >= n)) return "mesh.indices must be triangles indexing vertices";
   }
+  if ((type === "points" || type === "mesh") && (g.values !== undefined || g.colormap !== undefined)) {
+    const count = type === "points" ? (geom.positions as Vec3[]).length
+      : type === "mesh" ? (geom.vertices as Vec3[]).length : 0;
+    const problem = parseScalars(type, g, geom, count);
+    if (problem) return problem;
+  }
   if (SURFACE_TYPES.has(type) && g.window !== undefined && !validWindow(g.window)) {
     return `${type}.window must be {u?: [a, b], v?: [a, b]}`;
   }
   if (CURVE_TYPES.has(type) && g.range !== undefined && !isRange(g.range)) return `${type}.range must be [t0, t1]`;
+  return geom as unknown as Geom;
+}
+
+/** `values` (one per point or vertex) and `colormap` for a scalar-coloured cloud or mesh. */
+function parseScalars(type: string, raw: Record<string, unknown>, geom: Record<string, unknown>,
+                      count: number): string | undefined {
+  if (raw.colormap !== undefined && typeof raw.colormap !== "string") return `${type}.colormap must be a string`;
+  if (raw.values === undefined) return `${type}.colormap needs values`;
+  if (!Array.isArray(raw.values) || !raw.values.every(finite)) return `${type}.values must be finite numbers`;
+  if (raw.values.length !== count) {
+    return `${type}.values needs one per ${type === "points" ? "point" : "vertex"} (${count})`;
+  }
+  geom.values = raw.values;
+  if (raw.colormap !== undefined) geom.colormap = raw.colormap;
+  return undefined;
+}
+
+/** An extrusion or revolution: its profile curve plus the sweep, and an optional window.
+ * The profile is a curve or an index-parameterized polyline. */
+function parseSweepSurface(type: "extrusion" | "revolution", g: Record<string, unknown>): Geom | string {
+  const p = record(g.profile);
+  if (!p || typeof p.type !== "string" || !PROFILE_TYPES.has(p.type)) {
+    return `${type}.profile must be a curve or a polyline`;
+  }
+  const profile = parseGeom(p);
+  if (typeof profile === "string") return `${type}.${profile}`;
+  if (p.type === "polyline" && p.range !== undefined && !(isRange(p.range) && (p.range as Range)[0] !== (p.range as Range)[1])) {
+    return `${type}.profile.range must be [t0, t1] with t0 ≠ t1`;
+  }
+  const direction = asVec(g.direction);
+  if (direction === null || Math.hypot(...direction) === 0) return `${type}.direction must be a non-zero vector`;
+  if (g.window !== undefined && !validWindow(g.window)) return `${type}.window must be {u?: [a, b], v?: [a, b]}`;
+  const geom: Record<string, unknown> = { type, profile, direction };
+  if (type === "revolution") {
+    const origin = asVec(g.origin);
+    if (origin === null) return "revolution.origin must be a point";
+    geom.origin = origin;
+  }
+  if (g.window !== undefined) geom.window = g.window;
   return geom as unknown as Geom;
 }
 
@@ -179,6 +230,8 @@ export function parseObject(raw: unknown): { object: SceneObject } | { problem: 
   if (extras) object.extras = extras;
   const meta = record(r.meta);
   if (meta) object.meta = meta;
+  const step = str(r.step);
+  if (step !== undefined) object.step = step;
   return { object };
 }
 
@@ -217,5 +270,8 @@ export function parseDoc(raw: unknown): { doc: SceneDoc; problems: Problem[] } {
     else problems.push(parsed.problem);
   }
   const view = typeof r.view === "string" && VIEWS.has(r.view) ? (r.view as ViewMode) : "auto";
-  return { doc: { version: 2, title: str(r.title) ?? "", run: str(r.run) ?? null, view, objects }, problems };
+  const steps = Array.isArray(r.steps)
+    ? [...new Set(r.steps.filter((f): f is string => typeof f === "string" && f !== ""))]
+    : [];
+  return { doc: { version: 2, title: str(r.title) ?? "", run: str(r.run) ?? null, view, steps, objects }, problems };
 }

@@ -1,6 +1,6 @@
 import { Rect, clipCurve2D, expandRect } from "../geom/clip";
 import { evalCurve } from "../geom/curves";
-import { curveExtras } from "../geom/extras";
+import { curveExtras, dataExtras } from "../geom/extras";
 import { inPlaneZ0 } from "../geom/planar";
 import { Sampled, dashPolyline, sampleAdaptive } from "../geom/sample";
 import { arrowPolylines } from "../geom/tessellate";
@@ -9,6 +9,7 @@ import type { Vec2, Vec3 } from "../geom/vec";
 import type { SceneObject } from "../protocol";
 import { colorOf } from "../ui/colors";
 import { fmtNum, fmtParams, fmtPoint } from "../ui/format";
+import { scalarColors } from "../ui/colormap";
 import { Palette, mixHex } from "../ui/theme";
 import { Camera2D, screenToWorld, visibleRect, worldToScreen } from "./camera";
 import type { Hit, Pickable } from "./pick";
@@ -78,6 +79,8 @@ const KIND_ORDER: Record<TextKind, number> = { text: 0, point: 1, curve: 2, extr
 const labelOf = (o: SceneObject): string => o.label ?? o.id;
 /** " tangent" for a tangent hit or contact point, whose id then stays next to its coordinates. */
 const tangent = (o: SceneObject): string => (o.meta?.tangent === true ? " tangent" : "");
+/** Result operands keep their label for hover but do not draw one in the view. */
+const labelsOn = (o: SceneObject): boolean => o.meta?.operand !== true;
 const insideRect = (r: Rect, p: Vec3): boolean => p[0] >= r.xmin && p[0] <= r.xmax && p[1] >= r.ymin && p[1] <= r.ymax;
 
 /** The curve's visible pieces as screen polylines: clipped in closed form, then sampled to ≤ 0.25 px. */
@@ -133,7 +136,7 @@ export function buildDrawList(objects: Iterable<SceneObject>, cam: Camera2D, opt
       stroke(pieces.map((s) => s.pts));
       pick.polylines = pieces.map((s) => ({ pts: s.pts, ts: s.ts }));
       const anchor = curveAnchor(pieces, cam);
-      if (anchor) out.texts.push({ key: `c:${o.id}`, id: o.id, text: labelOf(o), at: anchor, color: opts.palette.text, kind: "curve" });
+      if (anchor && labelsOn(o)) out.texts.push({ key: `c:${o.id}`, id: o.id, text: labelOf(o), at: anchor, color: opts.palette.text, kind: "curve" });
       if (o.extras) {
         const extras = curveExtras(g, o.extras);
         const faded = mixHex(color, opts.palette.bg, EXTRA_MIX);
@@ -156,22 +159,33 @@ export function buildDrawList(objects: Iterable<SceneObject>, cam: Camera2D, opt
       const at = screen(g.p);
       out.dots.push({ id: o.id, at, color, radius: POINT_PX * ws + lit, alpha, hollow: false });
       pick.dots.push({ at, index: 0 });
-      out.texts.push({ key: `p:${o.id}`, id: o.id, text: `${labelOf(o)}${tangent(o)} ${fmtPoint(g.p)}`, at, color: opts.palette.text, kind: "point" });
+      if (labelsOn(o)) out.texts.push({ key: `p:${o.id}`, id: o.id, text: `${labelOf(o)}${tangent(o)} ${fmtPoint(g.p)}`, at, color: opts.palette.text, kind: "point" });
     } else if (g.type === "points") {
       const radius = (g.size ?? 3) * ws + lit;
+      const scalars = g.values ? scalarColors(g.values, g.colormap) : null;
       g.positions.forEach((p, index) => {
         if (!insideRect(clip, p)) return;
         const at = screen(p);
-        out.dots.push({ id: o.id, at, color, radius, alpha, hollow: false });
+        out.dots.push({ id: o.id, at, color: scalars?.[index] ?? color, radius, alpha, hollow: false });
         pick.dots.push({ at, index });
       });
       const first = g.positions[0];
       if (insideRect(clip, first)) {
-        out.texts.push({ key: `p:${o.id}`, id: o.id, text: labelOf(o), at: screen(first), color: opts.palette.text, kind: "point" });
+        if (labelsOn(o)) out.texts.push({ key: `p:${o.id}`, id: o.id, text: labelOf(o), at: screen(first), color: opts.palette.text, kind: "point" });
       }
     } else if (g.type === "text") {
       const textColor = o.style?.color ? color : opts.palette.text;
       out.texts.push({ key: `t:${o.id}`, id: o.id, text: g.text, at: screen(g.at), color: textColor, kind: "text" });
+    }
+    if (o.extras) {
+      // Extras the client computed from the exact object: control polygons, knot points, combs, normals.
+      const data = dataExtras(o.extras);
+      const faded = mixHex(color, opts.palette.bg, EXTRA_MIX);
+      const paths = (data.paths ?? []).map((path) => path.map(screen));
+      if (paths.length) out.strokes.push({ id: o.id, extra: true, paths: dash(paths), color: faded, width: EXTRA_PX * ws, alpha });
+      for (const x of data.points) {
+        if (insideRect(clip, x.p)) out.dots.push({ id: o.id, at: screen(x.p), color: faded, radius: EXTRA_DOT_PX * ws, alpha, hollow: true });
+      }
     }
   }
   const rank = (t: TextItem) => (isLit(t.id) ? -1 : KIND_ORDER[t.kind]);

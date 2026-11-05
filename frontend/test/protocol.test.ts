@@ -35,6 +35,89 @@ describe("parseObject", () => {
   });
 });
 
+describe("profile surfaces", () => {
+  it("parses an extrusion and a revolution, padding 2D vectors", () => {
+    const extrusion = parseObject({
+      id: "X",
+      geom: { type: "extrusion", profile: { type: "line", o: [1, 0], d: [0, 1] }, direction: [0, 0, 1], window: { v: [-1, 1] } },
+    });
+    expect(extrusion).toEqual({
+      object: {
+        id: "X",
+        geom: {
+          type: "extrusion", profile: { type: "line", o: [1, 0, 0], d: [0, 1, 0] },
+          direction: [0, 0, 1], window: { v: [-1, 1] },
+        },
+      },
+    });
+    const revolution = parseObject({
+      id: "R",
+      geom: { type: "revolution", profile: { type: "polyline", points: [[0, 1], [1, 1]] }, origin: [0, 0], direction: [0, 0, 1] },
+    });
+    expect("object" in revolution && revolution.object.geom).toMatchObject({
+      type: "revolution", profile: { points: [[0, 1, 0], [1, 1, 0]] }, origin: [0, 0, 0], direction: [0, 0, 1],
+    });
+  });
+
+  it.each([
+    [{ type: "extrusion", direction: [0, 0, 1] }, "extrusion.profile must be a curve or a polyline"],
+    [{ type: "extrusion", profile: { type: "plane", frame }, direction: [0, 0, 1] }, "extrusion.profile must be a curve or a polyline"],
+    [{ type: "extrusion", profile: { type: "line", o: [0, 0], d: [1, 0] }, direction: [0, 0, 0] }, "extrusion.direction must be a non-zero vector"],
+    [{ type: "extrusion", profile: { type: "line", o: [0, 0], d: [1, 0] }, direction: [0, 0, 1], window: { u: [1] } }, "extrusion.window must be {u?: [a, b], v?: [a, b]}"],
+    [{ type: "revolution", profile: { type: "line", o: [0, 0], d: [1, 0] }, direction: [0, 0, 1] }, "revolution.origin must be a point"],
+    [{ type: "extrusion", profile: { type: "polyline", points: [[0, 0], [1, 0]], range: [1, 1] }, direction: [0, 0, 1] }, "extrusion.profile.range must be [t0, t1] with t0 ≠ t1"],
+    [{ type: "revolution", profile: { type: "line", o: [0, 0], d: [1, 0] }, origin: [0, 0, 0], direction: [0, 0, 0] }, "revolution.direction must be a non-zero vector"],
+  ])("rejects malformed %j", (geom, message) => {
+    expect(parseObject({ id: "a", geom })).toEqual({ problem: { id: "a", message } });
+  });
+});
+
+describe("scalar colouring", () => {
+  it("parses per-point and per-vertex values with a colormap", () => {
+    const cloud = parseObject({
+      id: "C",
+      geom: { type: "points", positions: [[0, 0], [1, 1]], values: [0, 1], colormap: "plasma", size: 4 },
+    });
+    expect("object" in cloud && cloud.object.geom).toMatchObject({ values: [0, 1], colormap: "plasma" });
+    const mesh = parseObject({
+      id: "M",
+      geom: { type: "mesh", vertices: [[0, 0], [1, 0], [0, 1]], indices: [0, 1, 2], values: [1, 2, 3] },
+    });
+    expect("object" in mesh && mesh.object.geom).toMatchObject({ values: [1, 2, 3] });
+  });
+
+  it.each([
+    [{ type: "points", positions: [[0, 0]], values: [] }, "points.values needs one per point (1)"],
+    [{ type: "points", positions: [[0, 0]], values: [1], colormap: 7 }, "points.colormap must be a string"],
+    [{ type: "points", positions: [[0, 0]], colormap: "viridis" }, "points.colormap needs values"],
+    [{ type: "points", positions: [[0, 0]], values: [NaN] }, "points.values must be finite numbers"],
+    [{ type: "points", positions: [[0, 0]], values: "1" }, "points.values must be finite numbers"],
+    [{ type: "mesh", vertices: [[0, 0], [1, 0], [0, 1]], indices: [0, 1, 2], values: [1, 2] }, "mesh.values needs one per vertex (3)"],
+  ])("rejects malformed scalars %j", (geom, message) => {
+    expect(parseObject({ id: "a", geom })).toEqual({ problem: { id: "a", message } });
+  });
+});
+
+describe("steps", () => {
+  it("keeps a step on the object and the ordered list on the document", () => {
+    const doc = parseDoc({
+      version: 2, title: "T", view: "3d", steps: ["a", "b", "a"],
+      objects: [{ id: "o", step: "a", geom: { type: "point", p: [0, 0, 0] } }],
+    });
+    expect(doc.doc.steps).toEqual(["a", "b"]);
+    expect(doc.doc.objects[0].step).toBe("a");
+  });
+
+  it("ignores malformed step data", () => {
+    const doc = parseDoc({
+      version: 2, title: "", steps: ["a", 7, ""],
+      objects: [{ id: "o", step: 5, geom: { type: "point", p: [0, 0, 0] } }],
+    });
+    expect(doc.doc.steps).toEqual(["a"]);
+    expect(doc.doc.objects[0].step).toBeUndefined();
+  });
+});
+
 describe("pcurve", () => {
   it("accepts a (u, v) line, circle or polyline and pads 2D vectors", () => {
     const line = parseObject({ id: "c", geom: { type: "pcurve", surface: "Y", curve: { type: "line", o: [0, 3], d: [1, 0], range: [0, 6] } } });
@@ -72,7 +155,7 @@ describe("parseDoc", () => {
 
   it("reads v2 metadata and rejects other versions", () => {
     const { doc } = parseDoc({ version: 2, title: "t", run: "r", view: "2d", objects: [] });
-    expect(doc).toEqual({ version: 2, title: "t", run: "r", view: "2d", objects: [] });
+    expect(doc).toEqual({ version: 2, title: "t", run: "r", view: "2d", steps: [], objects: [] });
     expect(() => parseDoc({ version: 3, objects: [] })).toThrow(VersionError);
   });
 });

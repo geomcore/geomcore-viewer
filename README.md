@@ -7,13 +7,13 @@ browser tab that updates as your script, debugger or notebook runs.
 
 ```python
 # conics.py — run with: python conics.py   (re-run after every edit)
-from geomcore import Frame3D, Point3D, Vector3D
-from geomcore.curves import Circle3D, Ellipse3D
+from geomcore import Frame, Point, Vector
+from geomcore.curves import Circle, Ellipse
 import geomcore_viewer as gv
 
 view = gv.Viewer("Ellipse ∩ circle")
-E = Ellipse3D.from_frame(Frame3D.world(), 3.0, 2.0)
-C = Circle3D(Point3D(2, 1, 0), Vector3D.unit_z(), 1.5)
+E = Ellipse.from_frame(Frame.world(), 3.0, 2.0)
+C = Circle(Point(2, 1, 0), Vector.unit_z(), 1.5)
 
 view.add(E, label="E")
 view.add(C, label="C")
@@ -44,26 +44,37 @@ pip install geomcore-viewer        # stdlib only; the built viewer ships in the 
 ```
 
 The viewer itself has no dependencies, but the quick-start above and the scripts in
-`examples/` build their objects with geomcore 0.36 or later: `pip install "geomcore>=0.36"`, or, from a
+`examples/` build their objects with geomcore 0.39 or later, whose classes have the
+current names (`Point`, `Circle`, `Ellipse`…): `pip install "geomcore>=0.39"`, or, from a
 source checkout, `PYTHONPATH=../geomcore/geomcore-py` (add `python` when running
-from this repo, as in the Development section).
+from this repo, as in the Development section). The adapter also still accepts the
+pre-0.39 names (`Point3D`, `Circle3D`…), so older kernels keep working.
 
 ## API
 
 | Call | Does |
 |---|---|
 | `gv.Viewer(title, view="auto"\|"2d"\|"3d", keep=False)` | a scene (new run) |
-| `view.add(*objs, label=, group=, color=, width=, dashed=, opacity=, u=, v=, foci=, asymptotes=, …)` | show objects → `Handle` / list |
+| `view.add(*objs, label=, group=, color=, width=, dashed=, opacity=, u=, v=, foci=, asymptotes=, poles=, knots=, comb=, normals=, …)` | show objects → `Handle` / list |
 | `handle.update(color=…)`, `handle.remove()` | change or remove one object |
-| `view.pcurve(curve, on=surface)` | a `Line2D`, `Circle2D` (e.g. `circle.parametrize_on(cyl)`) or `(u, v)` pairs drawn on a surface already added |
-| `view.polyline(pts)`, `view.mesh(v, i)`, `view.arrow(at, vec)`, `view.text(at, s)` | raw geometry |
+| `view.pcurve(curve, on=surface)` | any 2D curve — `Line2D`/`Circle2D` exactly (e.g. `cyl.curve_3d_to_uv(circle)`, or `circle.parametrize_on(cyl)` before 0.43), the rest sampled to a polyline — or `(u, v)` pairs drawn on a surface already added |
+| `view.polyline(pts)`, `view.mesh(v, i)`, `view.arrow(at, vec)`, `view.text(at, s)` | raw geometry; `polyline` takes a list of point lists, `arrow`/`text` zipped lists (a single `vec` or string repeats) |
+| `view.points(xyz, values=, colormap=, size=)`, `view.mesh(v, i, values=, colormap=)` | one point cloud / mesh, coloured per point or vertex by `values` (`viridis`, `plasma`, `turbo`, `coolwarm`, `gray`) |
+| `with view.step("tilt 45°"): …` | a lesson step: the page shows one step at a time (slider and ←/→), so each parameter value keeps its own objects |
+| `with view.batch(): …` | send everything added inside the block once, not one request per call |
 | `view.clear()`, `view.save(path)`, `view.open()` | housekeeping |
 | `gv.add(...)`, `gv.clear()` | same, on the most recent viewer (handy in `pdb`) |
 | `geomcore-viewer serve` / `geomcore-viewer stop` | run / stop the server by hand |
 
+`add` takes the elementary curves and surfaces, the 2D conics (drawn in
+z = 0), B-spline and Bézier curves and surfaces (sampled over their parameter
+bounds), trimmed curves, extrusions and revolutions (sent exactly as their
+profile plus the sweep), points, and lists of those.
+
 Default windows for infinite surfaces (planes, cylinders, cones) are computed
 from the objects already added, so add the finite objects first or pass `u=`
-and `v=`.
+and `v=`. A `BSplineSurface` draws its own knot domain unless `u=`/`v=` narrows
+it to a sub-region.
 
 The server listens on `http://127.0.0.1:8765` by default. If that port is
 busy, set `GEOMCORE_VIEWER_URL=http://127.0.0.1:<other port>` (every script
@@ -87,23 +98,25 @@ nothing to unpack. Supported: `CurveProjection`, `CurveProjection2D`,
 `CurveCurveExtrema`.
 
 ```python
-from geomcore import Frame3D, Point3D, Vector3D
-from geomcore.curves import Circle3D, Ellipse3D
+from geomcore import Frame, Point, Vector
+from geomcore.curves import Circle, Ellipse
 import geomcore_viewer as gv
 
 view = gv.Viewer("Results")
-E = Ellipse3D.from_frame(Frame3D.world(), 3.0, 2.0)
-C = Circle3D(Point3D(2, 1, 0), Vector3D.unit_z(), 1.5)
+E = Ellipse.from_frame(Frame.world(), 3.0, 2.0)
+C = Circle(Point(2, 1, 0), Vector.unit_z(), 1.5)
 
-view.add(E.project_point(Point3D(4, 3, 0)), label="closest")  # projection
-view.add(C.intersect(E), label="P")                           # intersection
+view.add(E.project_point(Point(4, 3, 0)), label="closest")  # projection
+view.add(C.intersect(E), label="P")                         # intersection
 ```
 
 Each result draws as one group named after its label (or after the operands
 when there is none), the same group every time the script re-runs:
 
 - the operands are faded and the result is drawn in an accent colour no
-  automatic colour uses;
+  automatic colour uses; an operand the scene already shows (same object or
+  equal value) is reused rather than drawn again — pass `operands=False` to
+  `add` to leave all operands out;
 - a projection shows the query point, the closest point and a dashed connector
   labelled with the distance; the extrema of two curves show a dashed segment
   per minimum labelled `d = …`;
@@ -131,13 +144,24 @@ keys do nothing for it, and the failure stays in the header's status line.
 | `T` | light / dark theme (remembered by the browser) |
 | `2` / `3` | plane view / 3D view |
 | `U` | show / hide the (u,v) pane |
+| `←` / `→` | previous / next lesson step (when the scene has steps) |
 | `Esc` | leave presentation mode, else clear the selection |
 
 In the plane view, hover an object for its type, label, parameter `t`, and
 `(x, y)`; intersection points also show the parameters of the hit
 (`meta.params`). Click a point to copy its coordinates. Drag to pan and
 scroll to zoom. The panel's checkboxes hide objects and whole groups, and
-stay off when the script runs again. Click a row to frame that object.
+stay off when the script runs again. Click a row to frame that object. The
+header's `labels` checkbox hides object labels in both views; hover still
+names them, and axis ticks stay.
+
+In 3D, result operands draw no labels of their own (they stay named on hover),
+so a figure made of several results stays readable.
+
+Lesson steps (`with view.step("tilt 45°"): …`) appear as a slider in the
+header: the page draws the current step and keeps the other steps' objects
+out of the views and the panel. Objects added outside a step show in every
+step; the same label can be reused in different steps.
 
 In 3D, drag to orbit, right-drag to pan and scroll to zoom; the toolbar
 switches between perspective and orthographic and snaps to the top, front,

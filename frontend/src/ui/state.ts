@@ -11,7 +11,17 @@ export function usableView(view: ActiveView, available: AvailableViews): ActiveV
   return !available[view] && available[other] ? other : view;
 }
 
-export type UiEvent = "theme" | "presenting" | "view" | "visibility" | "selection" | "autofit" | "collapse" | "uvpane";
+export type UiEvent =
+  | "theme"
+  | "presenting"
+  | "view"
+  | "visibility"
+  | "selection"
+  | "autofit"
+  | "collapse"
+  | "uvpane"
+  | "labels"
+  | "step";
 
 /** The part of `Storage` the UI needs (tests pass a Map-backed fake). */
 export interface KeyValueStore {
@@ -52,6 +62,12 @@ export class UiState {
   autoFit = true;
   /** Spec §5.4: the (u,v) pane shows when the scene has something for it; U hides it (and brings it back). */
   uvPane = true;
+  /** Object labels in both views; the header's "labels" toggle turns them off (axis ticks stay). */
+  showLabels = true;
+  /** Lesson steps in scene order (from the store) and the one shown; objects without a step
+   * show in every step. */
+  steps: string[] = [];
+  stepIndex = 0;
   viewOverride: ActiveView | null = null;
   selected: string | null = null;
   readonly hiddenIds = new Set<string>();
@@ -109,6 +125,39 @@ export class UiState {
     this.emit("uvpane");
   }
 
+  setShowLabels(on: boolean): void {
+    if (on === this.showLabels) return;
+    this.showLabels = on;
+    this.emit("labels");
+  }
+
+  /** Take the step list the store reports; the shown step stays when it still exists. */
+  setSteps(steps: readonly string[]): void {
+    const changed = steps.length !== this.steps.length || steps.some((f, i) => f !== this.steps[i]);
+    this.steps = [...steps];
+    this.stepIndex = Math.min(this.stepIndex, Math.max(0, this.steps.length - 1));
+    if (changed) this.emit("step");
+  }
+
+  /** Show step `index` (clamped); the header's slider and ←/→ call this. */
+  setStep(index: number): void {
+    if (!this.steps.length) return;
+    const next = Math.min(Math.max(0, Math.round(index)), this.steps.length - 1);
+    if (next === this.stepIndex) return;
+    this.stepIndex = next;
+    this.emit("step");
+  }
+
+  moveStep(delta: number): void {
+    this.setStep(this.stepIndex + delta);
+  }
+
+  /** True when the object belongs to the step being shown (unscoped objects do). */
+  inStep(o: SceneObject): boolean {
+    const current = this.steps[this.stepIndex];
+    return o.step === undefined || current === undefined || o.step === current;
+  }
+
   setView(view: ActiveView): void {
     this.viewOverride = view;
     this.emit("view");
@@ -121,7 +170,7 @@ export class UiState {
   }
 
   isVisible(o: SceneObject): boolean {
-    return !this.hiddenIds.has(o.id) && !(o.group !== undefined && this.hiddenGroups.has(o.group));
+    return this.inStep(o) && !this.hiddenIds.has(o.id) && !(o.group !== undefined && this.hiddenGroups.has(o.group));
   }
 
   setObjectVisible(id: string, visible: boolean): void {

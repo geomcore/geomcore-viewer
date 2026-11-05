@@ -61,6 +61,12 @@ const runs = new RunCounter();
 const header = { title: byId("title"), status: byId("status"), run: byId("run"), count: byId("count") };
 const stage = byId("stage");
 const autofit = byId<HTMLInputElement>("autofit");
+const labels = byId<HTMLInputElement>("labels");
+const stepBar = byId("step-bar");
+const stepSlider = byId<HTMLInputElement>("step-slider");
+const stepLabel = byId("step-label");
+const stepPrevious = byId<HTMLButtonElement>("step-previous");
+const stepNext = byId<HTMLButtonElement>("step-next");
 const shell = new FrameScheduler(() => {
   renderHeader(store, runs, header, failures);
   const view = usableView(ui.activeView(store.view, store.objects.values()), available);
@@ -72,11 +78,21 @@ const shell = new FrameScheduler(() => {
   byId("present").setAttribute("aria-pressed", String(ui.presenting));
   document.body.classList.toggle("presenting", ui.presenting);
   autofit.checked = ui.autoFit;
+  labels.checked = ui.showLabels;
+  stepBar.hidden = ui.steps.length <= 1;
+  stepSlider.max = String(Math.max(0, ui.steps.length - 1));
+  stepSlider.value = String(ui.stepIndex);
+  stepLabel.textContent = ui.steps[ui.stepIndex] ?? "";
+  stepPrevious.disabled = ui.stepIndex <= 0;
+  stepNext.disabled = ui.stepIndex >= ui.steps.length - 1;
   view2d.setActive(view === "2d");
   view3d?.setActive(view === "3d");
   uvpane?.setActive(view === "3d");
 });
-store.onChange(() => shell.request());
+store.onChange((ev) => {
+  if (ev.type === "reset" || ev.type === "upsert") ui.setSteps(store.steps);
+  shell.request();
+});
 ui.onChange((ev) => {
   if (ev === "theme") applyTheme(ui.theme);
   shell.request();
@@ -100,6 +116,10 @@ byId("view-3d").addEventListener("click", () => chooseView("3d"));
 byId("theme").addEventListener("click", () => ui.toggleTheme());
 byId("present").addEventListener("click", present);
 autofit.addEventListener("change", () => ui.setAutoFit(autofit.checked)); // turning it on refits both views
+labels.addEventListener("change", () => ui.setShowLabels(labels.checked));
+stepSlider.addEventListener("input", () => ui.setStep(Number(stepSlider.value)));
+stepPrevious.addEventListener("click", () => ui.moveStep(-1));
+stepNext.addEventListener("click", () => ui.moveStep(1));
 byId("clear").addEventListener("click", () => void store.clearAll());
 mountKeys({
   fit,
@@ -108,6 +128,8 @@ mountKeys({
   view2d: () => chooseView("2d"),
   view3d: () => chooseView("3d"),
   uvpane: () => ui.toggleUvPane(),
+  stepPrevious: () => ui.moveStep(-1),
+  stepNext: () => ui.moveStep(1),
   escape: () => (ui.presenting ? ui.setPresenting(false) : ui.select(null)),
 });
 

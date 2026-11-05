@@ -1,5 +1,5 @@
 import { halfSize } from "../geom/bounds";
-import { curveExtras } from "../geom/extras";
+import { curveExtras, dataExtras } from "../geom/extras";
 import { liftPcurve, pcurveSurface } from "../geom/pcurve";
 import { Sampled, dashPolyline } from "../geom/sample";
 import { evalSurface } from "../geom/surfaces";
@@ -19,6 +19,7 @@ import type { Box, Vec3 } from "../geom/vec";
 import type { SceneObject } from "../protocol";
 import { colorOf } from "../ui/colors";
 import { fmtPoint } from "../ui/format";
+import { scalarColors, scalarRgba } from "../ui/colormap";
 import type { TextKind } from "../view2d/render";
 
 /** Spec §5.3: curves are 3 px wide whatever the zoom. */
@@ -55,12 +56,16 @@ export interface Surface3D {
   grid: SurfaceGrid | null;
   color: string;
   alpha: number;
+  /** Per-vertex RGBA, flat as Babylon's VertexData expects it, when the mesh carries scalars. */
+  colors?: number[];
 }
 
 export interface Markers3D {
   id: string;
   at: Vec3[];
   color: string;
+  /** One CSS colour per point when the cloud carries scalars; `color` is the fallback. */
+  colors?: string[];
   /** Radius in CSS pixels before presentation scaling and highlight. */
   px: number;
   alpha: number;
@@ -106,6 +111,8 @@ export interface Context3D {
 const labelOf = (o: SceneObject): string => o.label ?? o.id;
 /** " tangent" for a tangent hit or contact point, whose id then stays next to its coordinates. */
 const tangent = (o: SceneObject): string => (o.meta?.tangent === true ? " tangent" : "");
+/** Result operands keep their label for hover but do not draw one in the view. */
+const labelsOn = (o: SceneObject): boolean => o.meta?.operand !== true;
 
 /** True when surfaces default to see-through: some curve, polyline or pcurve is in the scene. */
 export function hasCurves(objects: Iterable<SceneObject>): boolean {
@@ -160,7 +167,7 @@ export function objectDraw3D(o: SceneObject, ctx: Context3D): ObjectDraw3D {
     stroke(paths);
     out.pick.polylines.push(...pieces.map((s) => ({ pts: s.pts, ts: s.ts })));
     const at = curveAnchor(paths);
-    if (at) out.texts.push({ key: `c:${o.id}`, id: o.id, text: labelOf(o), at, color: null, kind: "curve" });
+    if (at && labelsOn(o)) out.texts.push({ key: `c:${o.id}`, id: o.id, text: labelOf(o), at, color: null, kind: "curve" });
   };
 
   if (isCurve(g)) {
@@ -170,7 +177,9 @@ export function objectDraw3D(o: SceneObject, ctx: Context3D): ObjectDraw3D {
       stroke(extras.lines.flatMap((l) => curvePieces(l, ctx.box, tol).map((s) => s.pts)), true);
       if (extras.points.length) {
         out.markers.push({ id: o.id, at: extras.points.map((x) => x.p), color, px: EXTRA_DOT_PX, alpha, extra: true });
-        for (const x of extras.points) out.texts.push({ key: `x:${o.id}:${x.name}`, id: o.id, text: x.name, at: x.p, color: null, kind: "extra" });
+        for (const x of extras.points) {
+          if (x.name) out.texts.push({ key: `x:${o.id}:${x.name}`, id: o.id, text: x.name, at: x.p, color: null, kind: "extra" });
+        }
       }
     }
   } else if (isPcurve(g)) {
@@ -186,10 +195,11 @@ export function objectDraw3D(o: SceneObject, ctx: Context3D): ObjectDraw3D {
       out.surface = null; // a wireframe is its lines only
     }
     const mid = evalSurface(g, (grid.u[0] + grid.u[1]) / 2, (grid.v[0] + grid.v[1]) / 2);
-    out.texts.push({ key: `s:${o.id}`, id: o.id, text: labelOf(o), at: mid, color: null, kind: "curve" });
+    if (labelsOn(o)) out.texts.push({ key: `s:${o.id}`, id: o.id, text: labelOf(o), at: mid, color: null, kind: "curve" });
   } else if (g.type === "mesh") {
     const mesh = { positions: g.vertices.flat(), indices: g.indices, uvs: [] };
-    out.surface = { id: o.id, mesh, grid: null, color, alpha: surfaceAlpha(o, ctx.withCurves) };
+    const colors = g.values ? scalarRgba(g.values, g.colormap) : undefined;
+    out.surface = { id: o.id, mesh, grid: null, color, alpha: surfaceAlpha(o, ctx.withCurves), colors };
   } else if (g.type === "polyline" || g.type === "arrow") {
     const lines = g.type === "polyline" ? [g.points] : arrowPolylines(g.at, g.vec);
     stroke(lines);
@@ -197,13 +207,22 @@ export function objectDraw3D(o: SceneObject, ctx: Context3D): ObjectDraw3D {
   } else if (g.type === "point") {
     out.markers.push({ id: o.id, at: [g.p], color, px: POINT_PX, alpha, extra: false });
     out.pick.dots.push(g.p);
-    out.texts.push({ key: `p:${o.id}`, id: o.id, text: `${labelOf(o)}${tangent(o)} ${fmtPoint(g.p)}`, at: g.p, color: null, kind: "point" });
+    if (labelsOn(o)) out.texts.push({ key: `p:${o.id}`, id: o.id, text: `${labelOf(o)}${tangent(o)} ${fmtPoint(g.p)}`, at: g.p, color: null, kind: "point" });
   } else if (g.type === "points") {
-    out.markers.push({ id: o.id, at: g.positions, color, px: g.size ?? 3, alpha, extra: false });
+    const colors = g.values ? scalarColors(g.values, g.colormap) : undefined;
+    out.markers.push({ id: o.id, at: g.positions, color, colors, px: g.size ?? 3, alpha, extra: false });
     out.pick.dots.push(...g.positions);
-    if (g.positions.length) out.texts.push({ key: `p:${o.id}`, id: o.id, text: labelOf(o), at: g.positions[0], color: null, kind: "point" });
+    if (g.positions.length && labelsOn(o)) out.texts.push({ key: `p:${o.id}`, id: o.id, text: labelOf(o), at: g.positions[0], color: null, kind: "point" });
   } else if (g.type === "text") {
     out.texts.push({ key: `t:${o.id}`, id: o.id, text: g.text, at: g.at, color: o.style?.color ? color : null, kind: "text" });
+  }
+  if (o.extras) {
+    // Extras the client computed from the exact object: control polygons, knot points, combs, normals.
+    const data = dataExtras(o.extras);
+    stroke(data.paths ?? [], true);
+    if (data.points.length) {
+      out.markers.push({ id: o.id, at: data.points.map((x) => x.p), color, px: EXTRA_DOT_PX, alpha, extra: true });
+    }
   }
   return out;
 }
