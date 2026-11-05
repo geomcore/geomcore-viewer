@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import numbers
 import urllib.error
 import urllib.request
 import uuid
@@ -162,14 +163,15 @@ class Viewer:
         """One text, or a list: ``at`` may be a list of points and ``text`` a string (repeated)
         or a list of strings, zipped."""
         ats = list(at) if _points_listed(at) else [at]
-        texts = list(text) if isinstance(text, (list, tuple)) else [text]
+        texts = list(text) if _is_sequence(text) else [text]
         geoms = [{"type": "text", "at": as_vec(p), "text": str(t)} for p, t in _paired(ats, texts)]
         return self._commit(_labelled_geoms(geoms, label), label, group, options)
 
     @contextmanager
     def batch(self):
         """Send everything added inside the block in one request, instead of one per call:
-        ``with view.batch(): view.arrow(...) ...``."""
+        ``with view.batch(): view.arrow(...) ...``. Batches nest (the outermost one sends). If the
+        block raises, what it added before the error is still sent, then the error propagates."""
         self._batch_depth += 1
         try:
             yield self
@@ -387,18 +389,24 @@ def viewer() -> Viewer:
     return _default if _default is not None else Viewer()
 
 
+def _is_sequence(value) -> bool:
+    """A list, a tuple, a numpy array or any other sized iterable that is not a string."""
+    return not isinstance(value, (str, bytes)) and hasattr(value, "__len__") and hasattr(value, "__iter__")
+
+
 def _is_point(value) -> bool:
-    """A point or vector: a geomcore point/vector, or a 2- or 3-number sequence."""
+    """A point or vector: a geomcore point/vector, or a sequence of 2 or 3 numbers (numpy rows
+    and numpy scalars included, without importing numpy)."""
     if hasattr(value, "x") and not callable(value.x):
         return True
     if hasattr(value, "components"):
         return True
-    return isinstance(value, (list, tuple)) and len(value) in (2, 3) and all(isinstance(c, (int, float)) for c in value)
+    return _is_sequence(value) and len(value) in (2, 3) and all(isinstance(c, numbers.Real) for c in value)
 
 
 def _points_listed(value) -> bool:
-    """True for a list of points (`[(0, 0), (1, 1)]`) as opposed to one point."""
-    return isinstance(value, (list, tuple)) and len(value) > 0 and all(_is_point(v) for v in value)
+    """True for a list of points (`[(0, 0), (1, 1)]`, an (N, 3) array) as opposed to one point."""
+    return _is_sequence(value) and len(value) > 0 and all(_is_point(v) for v in value)
 
 
 def _polylines(points) -> list:

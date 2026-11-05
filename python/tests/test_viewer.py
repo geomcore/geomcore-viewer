@@ -538,3 +538,16 @@ def test_u_window_narrows_a_revolution_whose_profile_is_bounded(server):
     surface = RevolutionSurface(Circle(Point(3, 0, 0), Vector(0, 1, 0), 1.0), Axis(Point(0, 0, 0), Vector(0, 0, 1)))
     view.add(surface, label="R", u=(0.0, math.pi))
     assert view.objects["R"]["geom"]["window"] == {"u": [0.0, math.pi], "v": [0.0, 2 * math.pi]}
+
+
+def test_numpy_arrays_are_points_and_point_lists(server):
+    np = pytest.importorskip("numpy")
+    view = make(server)
+    view.polyline(np.array([[0, 0, 0], [1, 0, 0], [1, 1, 0]]), label="A")
+    assert view.objects["A"]["geom"]["points"] == [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [1.0, 1.0, 0.0]]
+    assert len(view.polyline(np.zeros((2, 3, 3)), label="B")) == 2  # a stack of polylines
+    assert len(view.arrow(np.zeros((4, 3)), (0, 0, 1), label="C")) == 4
+    view.arrow(np.array([1.0, 2.0, 3.0]), np.array([0.0, 0.0, 1.0]), label="D")  # one numpy point
+    assert view.objects["D"]["geom"]["at"] == [1.0, 2.0, 3.0]
+    texts = view.text([(0, 0), (1, 1)], np.array(["a", "b"]), label="T")
+    assert [view.objects[h.id]["geom"]["text"] for h in texts] == ["a", "b"]
