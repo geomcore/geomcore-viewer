@@ -111,7 +111,9 @@ Each result draws as one group named after its label (or after the operands
 when there is none), the same group every time the script re-runs:
 
 - the operands are faded and the result is drawn in an accent colour no
-  automatic colour uses;
+  automatic colour uses; an operand the scene already shows (same object or
+  equal value) is reused rather than drawn again — pass `operands=False` to
+  `add` to leave all operands out;
 - a projection shows the query point, the closest point and a dashed connector
   labelled with the distance; the extrema of two curves show a dashed segment
   per minimum labelled `d = …`;

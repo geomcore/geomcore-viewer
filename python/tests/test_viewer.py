@@ -23,6 +23,54 @@ class Plane:
         return Point3D(u, v, 0.0)
 
 
+class Named:
+    def __init__(self, name):
+        self.name = name
+
+
+class Complete:
+    status = Named("COMPLETE")
+
+
+class Line3D:
+    def __init__(self, o, d):
+        self.o, self.d = o, d
+
+    def origin(self):
+        return self.o
+
+    def direction(self):
+        return self.d
+
+    def eval_point(self, t):
+        return Point3D(self.o.x + t * self.d.x, self.o.y + t * self.d.y, self.o.z + t * self.d.z)
+
+
+class CurveCurveIntersection:
+    """The parts of a geomcore result object that the adapter reads."""
+
+    method = Named("EXACT")
+    completeness = Complete()
+    hits = curves = overlaps = contact_points = ()
+
+    def __init__(self, first, second):
+        self.first, self.second = first, second
+
+
+def test_a_result_reuses_operands_already_in_the_scene(server):
+    view = make(server)
+    a = Line3D(Point3D(0, 0, 0), Point3D(1, 1, 0))
+    b = Line3D(Point3D(0, 1, 0), Point3D(1, -1, 0))
+    view.add(a, label="A")
+    view.add(CurveCurveIntersection(a, b), label="X")
+    ids = _ids(server)
+    assert "X·first" not in ids  # A is already drawn
+    assert "X·second" in ids
+    view.add(CurveCurveIntersection(a, b), label="Y", operands=False)
+    ids = _ids(server)
+    assert not any(i.startswith("Y·first") or i.startswith("Y·second") for i in ids)
+
+
 @pytest.fixture
 def server(tmp_path):
     srv = Server(tmp_path, port=0).start()

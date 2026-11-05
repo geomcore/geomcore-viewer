@@ -960,6 +960,47 @@ def test_default_group_names_both_operands_and_is_deterministic():
     assert {p["key"] for p in to_objects(result)} == {p["key"] for p in to_objects(result)}
 
 
+def test_operands_false_leaves_the_operands_out():
+    result = CurveCurveIntersection(x_line(), unit_circle(), hits=[CurveCurveHit(Point3D(1, 0, 0), 0.0, 0.0)])
+    keys = {p["key"] for p in to_objects(result, "P", operands=False)}
+    assert not any("·first" in key or "·second" in key for key in keys)
+    assert "P·hit1" in keys
+
+
+def test_a_result_does_not_draw_an_operand_the_scene_already_shows():
+    result = CurveCurveIntersection(x_line(), unit_circle(), hits=[CurveCurveHit(Point3D(1, 0, 0), 0.0, 0.0)])
+    circle_geom = to_objects(unit_circle())[0]["geom"]
+    keys = {p["key"] for p in to_objects(result, "P", existing=[circle_geom])}
+    assert "P·first" in keys and "P·second" not in keys
+    both = [p["geom"] for obj in (x_line(), unit_circle()) for p in to_objects(obj)]
+    keys = {p["key"] for p in to_objects(result, "P", existing=both)}
+    assert not any(key in keys for key in ("P·first", "P·second"))
+
+
+def test_operand_matching_ignores_a_drawn_window():
+    result = SurfaceSurfaceIntersection(xy_plane(), unit_circle_surface())
+    shown = to_objects(xy_plane())[0]["geom"]  # no window yet; the operand gets one when drawn
+    assert shown["type"] == "plane" and "window" not in shown
+    keys = {p["key"] for p in to_objects(result, "S", existing=[shown])}
+    assert "S·first" not in keys and "S·second" in keys
+
+
+def test_a_projection_does_not_redraw_a_target_the_scene_already_shows():
+    line = fake("Line3D", X_LINE, origin=Point3D(0, 0, 0), direction=Vector3D(1, 0, 0))
+    [shown] = [p["geom"] for p in to_objects(line)]
+    parts = to_objects(CurveProjection(line, Point3D(1, 2, 0), Point3D(1, 0, 0), 2.0, 1.0), "A", existing=[shown])
+    assert len(parts) == 3 and all(p["key"] != "A·target" for p in parts)
+    assert len(to_objects(CurveProjection(line, Point3D(1, 2, 0), Point3D(1, 0, 0), 2.0, 1.0), "A",
+                          operands=False)) == 3
+
+
+def test_surface_projection_target_is_windowed_and_can_be_skipped():
+    plane = fake("Plane", XY_PLANE)
+    [shown] = [p["geom"] for p in to_objects(plane)]
+    result = SurfaceProjection(plane, Point3D(10, 20, 3), Point3D(10, 20, 0), 3.0, 10.0, 20.0)
+    assert not any(p["key"] == "S·target" for p in to_objects(result, "S", existing=[shown]))
+
+
 def test_tangent_hit_and_tangent_curve_are_labelled():
     result = SurfaceSurfaceIntersection(
         xy_plane(), xy_plane(),

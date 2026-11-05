@@ -614,7 +614,7 @@ def _surface_window_bounds(name: str, result, u, v) -> tuple[tuple | None, tuple
         bounds_v if "v" in infinite or v is not None else None), half
 
 
-def _projection(result, label: str | None, u=None, v=None) -> list[dict]:
+def _projection(result, label: str | None, u=None, v=None, existing=(), operands=True) -> list[dict]:
     """The target, the query point, the closest point and a dashed segment between them, in one group.
 
     The recipe styles (accent colour, dashed connector) are defaults: ``color=`` or ``dashed=``
@@ -637,8 +637,9 @@ def _projection(result, label: str | None, u=None, v=None) -> list[dict]:
     closest_meta = {"tag": "projection", "params": _numeric(params)}
     accent = {"color": ACCENT}
     neutral = {"color": QUERY_POINT_COLOR}
-    return [
-        {**target, "key": f"{label}·target", "group": label},
+    target_part = {**target, "key": f"{label}·target", "group": label}
+    parts = [] if operands is False or _same_value(target["geom"], existing) else [target_part]
+    return parts + [
         {"label": "query point", "key": f"{label}·query", "group": label, "style": neutral,
          "geom": {"type": "point", "p": query}},
         {"label": f"closest point, d = {float(result.distance):.6g}", "key": f"{label}·closest", "group": label,
@@ -715,9 +716,19 @@ def _operand_window(operand, reference_points, user_u, user_v) -> tuple[tuple | 
     return bounds["u"], bounds["v"]
 
 
-def _operands(result, label: str, reference_points: list, u, v) -> list[dict]:
+def _same_value(geom: dict, existing) -> bool:
+    """True when a geometry of the scene already has this value (a window is a drawing choice,
+    not part of the value, so it is ignored)."""
+    value = {k: v for k, v in geom.items() if k != "window"}
+    return any({k: v for k, v in other.items() if k != "window"} == value for other in existing)
+
+
+def _operands(result, label: str, reference_points: list, u, v, existing=(), show=True) -> list[dict]:
     """Both intersected shapes, translucent so the result stays visible inside them. Unbounded
-    surfaces are windowed around the result and the bounded operand."""
+    surfaces are windowed around the result and the bounded operand. An operand already in the
+    scene is not drawn again; ``show=False`` leaves both out."""
+    if not show:
+        return []
     operands = (result.first, result.second)
     parts = []
     for name, obj in zip(("first", "second"), operands):
@@ -729,11 +740,11 @@ def _operands(result, label: str, reference_points: list, u, v) -> list[dict]:
             points += _geometry_reference_points(part["geom"])
     for obj, part in zip(operands, parts):
         if _infinite_directions(part["geom"]):
-            existing = part["geom"].get("window") or {}
-            bounds_u, bounds_v = _operand_window(obj, points, u if u is not None else existing.get("u"),
-                                                 v if v is not None else existing.get("v"))
+            window = part["geom"].get("window") or {}
+            bounds_u, bounds_v = _operand_window(obj, points, u if u is not None else window.get("u"),
+                                                 v if v is not None else window.get("v"))
             part["geom"] = with_window(part["geom"], _WINDOW_DEFAULT_HALF_SIZE, bounds_u, bounds_v)
-    return parts
+    return [part for part in parts if not _same_value(part["geom"], existing)]
 
 
 def _sampled_range(curve, first: float, last: float) -> dict:
@@ -815,7 +826,7 @@ def _completeness_parts(result, label: str) -> list[dict]:
     return []
 
 
-def _intersection(result, label: str | None, u=None, v=None) -> list[dict]:
+def _intersection(result, label: str | None, u=None, v=None, existing=(), operands=True) -> list[dict]:
     """Both operands translucent, the result in the accent colour, and notes on the method and completeness.
 
     One group per result, named after the operands unless ``label`` is given. Recipe styles are
@@ -846,10 +857,10 @@ def _intersection(result, label: str | None, u=None, v=None) -> list[dict]:
     if hasattr(result, "is_coincident") and result.is_coincident():
         notes.insert(0, _note(INFO_NOTES["coincident"], label, "info", "coincident"))
     notes.insert(0, _note(f"method: {result.method.name.lower()}", label, "info", "method"))
-    return _operands(result, label, reference_points, u, v) + parts + notes
+    return _operands(result, label, reference_points, u, v, existing, operands) + parts + notes
 
 
-def _extrema(result, label: str | None, u=None, v=None) -> list[dict]:
+def _extrema(result, label: str | None, u=None, v=None, existing=(), operands=True) -> list[dict]:
     """Both curves translucent and a dashed segment joining the two points of each minimum."""
     first_name, second_name = _name(result.first), _name(result.second)
     label = label or f"{first_name} × {second_name} extrema"
@@ -865,7 +876,7 @@ def _extrema(result, label: str | None, u=None, v=None) -> list[dict]:
     if not result.minima:
         parts.append(_note(EMPTY_NOTES["empty"], label))
     reference_points = [point for p in parts for point in _geometry_reference_points(p["geom"])]
-    return _operands(result, label, reference_points, u, v) + parts
+    return _operands(result, label, reference_points, u, v, existing, operands) + parts
 
 
 _RESULT_OBJECTS = {
@@ -875,16 +886,18 @@ _RESULT_OBJECTS = {
 }
 
 
-def _result_object(obj, label: str | None, u=None, v=None) -> list[dict] | None:
+def _result_object(obj, label: str | None, u=None, v=None, existing=(), operands=True) -> list[dict] | None:
     """Parts for a geomcore result object, dispatched on its class name; None for anything else."""
     recipe = _RESULT_OBJECTS.get(type(obj).__name__)
-    return None if recipe is None else recipe(obj, label, u, v)
+    return None if recipe is None else recipe(obj, label, u, v, existing, operands)
 
 
-def to_objects(obj, label: str | None = None, *, u=None, v=None) -> list[dict]:
+def to_objects(obj, label: str | None = None, *, u=None, v=None, existing=(), operands=True) -> list[dict]:
     """Protocol parts for one ``add`` argument: a geomcore object, a result object such as a
-    projection, a ``(tag, payload)`` intersection result, or a list/tuple of those."""
-    parts = _result_object(obj, label, u, v)
+    projection, a ``(tag, payload)`` intersection result, or a list/tuple of those. ``existing``
+    holds the scene's geometries, so a result does not draw an operand a second time; with
+    ``operands=False`` it draws no operands at all."""
+    parts = _result_object(obj, label, u, v, existing, operands)
     if parts is not None:
         return parts
     if _is_result(obj):

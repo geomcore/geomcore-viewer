@@ -97,7 +97,8 @@ class Viewer:
         _default = self
 
     # -- adding ------------------------------------------------------------
-    def add(self, *objs, label: str | None = None, group: str | None = None, u=None, v=None, **options):
+    def add(self, *objs, label: str | None = None, group: str | None = None, u=None, v=None, operands=True,
+            **options):
         """Show geomcore objects, intersection results, points, or lists of them.
 
         Style: ``color``, ``width``, ``dashed``, ``opacity``. Curve extras:
@@ -105,15 +106,17 @@ class Viewer:
         ``vertex``; B-spline and Bézier extras: ``poles`` (control polygon),
         ``knots`` (knot points), ``comb=scale`` (curvature comb); surface extras
         ``isolines``, ``wire``, ``normals=n``; ``u=``/``v=`` set a surface's
-        parameter window. Re-adding a ``label`` replaces what that label showed
-        before.
+        parameter window. A result draws its operands faded, except any the
+        scene already shows; pass ``operands=False`` to leave all of them out.
+        Re-adding a ``label`` replaces what that label showed before.
         """
         if not objs:
             raise TypeError("add() needs at least one object")
         parts: list[dict] = []
         for i, obj in enumerate(objs, start=1):
             part_label = label if len(objs) == 1 or label is None else indexed(label, i)
-            object_parts = to_objects(obj, part_label, u=u, v=v)
+            existing = [o["geom"] for o in self.objects.values()] + [p["geom"] for p in parts]
+            object_parts = to_objects(obj, part_label, u=u, v=v, existing=existing, operands=operands)
             data = extra_data(obj, options, u, v)
             if data:
                 for part in object_parts:
