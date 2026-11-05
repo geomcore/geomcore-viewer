@@ -117,10 +117,9 @@ class Viewer:
             part_label = label if len(objs) == 1 or label is None else indexed(label, i)
             existing = [o["geom"] for o in self.objects.values()] + [p["geom"] for p in parts]
             object_parts = to_objects(obj, part_label, u=u, v=v, existing=existing, operands=operands)
-            data = extra_data(obj, options, u, v)
-            if data:
-                for part in object_parts:
-                    part["data"] = data
+            if len(object_parts) == 1:
+                # Poles, knots, combs and normals come from the exact object, once its window is known.
+                object_parts[0]["exact_object"] = obj
             parts += object_parts
         return self._commit(parts, label, group, options, u, v)
 
@@ -176,7 +175,9 @@ class Viewer:
     def _build(self, part: dict, style: dict, group, extras: dict, u, v) -> dict:
         geom = part["geom"]
         object_id = part.get("key") or part["label"] or self._auto_id()
-        if geom["type"] in SURFACE_TYPES and missing_window(geom):
+        # u= / v= narrow a surface even when its adapter already windowed it (a revolution's
+        # bounded profile, say).
+        if geom["type"] in SURFACE_TYPES and (missing_window(geom) or u is not None or v is not None):
             others = (o["geom"] for o in self.objects.values() if o["id"] != object_id)
             geom = with_window(geom, scene_extent(others), u, v)
         obj: dict = {"id": object_id, "geom": geom}
@@ -193,8 +194,12 @@ class Viewer:
             color = previous.get("color") or part_style.get("color") or self._color()
             applied = {k: x for k, x in style.items() if k not in part.get("keeps_style", ())}
             obj["style"] = {**part_style, "color": color, **applied}
-        if extras or part.get("data"):
-            obj["extras"] = {**extras, **(part.get("data") or {})}
+        computed = {}
+        if part.get("exact_object") is not None:
+            window = geom.get("window") or {}
+            computed = extra_data(part["exact_object"], extras, window.get("u", u), window.get("v", v))
+        if extras or computed:
+            obj["extras"] = {**extras, **computed}
         if part.get("meta"):
             obj["meta"] = part["meta"]
         _check_serializable(obj)
