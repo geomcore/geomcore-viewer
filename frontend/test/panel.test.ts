@@ -39,6 +39,12 @@ describe("panelModel", () => {
     expect(rows.find((r) => r.id === "note")).toEqual({ kind: "note", id: "note", text: "2 tangent points", warn: true });
   });
 
+  it("keeps a tangent hit's name and adds the tangency to its detail", () => {
+    const hit = obj("P·hit1", { type: "point", p: [1, 0, 0] }, { meta: { tag: "hit", tangent: true } });
+    const [row] = panelModel(storeOf([hit]), new UiState(null)).groups[0].rows;
+    expect(row).toMatchObject({ kind: "object", label: "P·hit1", detail: "tangent, (1, 0)" });
+  });
+
   it("lists only the step being shown", () => {
     const ui = new UiState(null);
     const a = obj("a", { type: "point", p: [0, 0, 0] }, { label: "a", step: "one" });

@@ -50,6 +50,11 @@ describe("buildDrawList", () => {
     expect(list.texts).toMatchObject([{ key: "p:P₁", text: "P₁ (1.841, 1.62)", kind: "point" }]);
   });
 
+  it("keeps a tangent hit's name next to its coordinates", () => {
+    const hit = obj("P·hit1", { type: "point", p: [1.8412, 1.62, 0] }, { meta: { tag: "hit", tangent: true } });
+    expect(buildDrawList([hit], cam, opts()).texts).toMatchObject([{ text: "P·hit1 tangent (1.841, 1.62)" }]);
+  });
+
   it("colours a point cloud's dots by its scalars", () => {
     const cloud = obj("C", { type: "points", positions: [[0, 0, 0], [1, 0, 0]], values: [0, 1] });
     const dots = buildDrawList([cloud], cam, opts()).dots;

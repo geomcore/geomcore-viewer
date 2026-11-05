@@ -109,6 +109,8 @@ export interface Context3D {
 }
 
 const labelOf = (o: SceneObject): string => o.label ?? o.id;
+/** " tangent" for a tangent hit or contact point, whose id then stays next to its coordinates. */
+const tangent = (o: SceneObject): string => (o.meta?.tangent === true ? " tangent" : "");
 /** Result operands keep their label for hover but do not draw one in the view. */
 const labelsOn = (o: SceneObject): boolean => o.meta?.operand !== true;
 
@@ -205,7 +207,7 @@ export function objectDraw3D(o: SceneObject, ctx: Context3D): ObjectDraw3D {
   } else if (g.type === "point") {
     out.markers.push({ id: o.id, at: [g.p], color, px: POINT_PX, alpha, extra: false });
     out.pick.dots.push(g.p);
-    if (labelsOn(o)) out.texts.push({ key: `p:${o.id}`, id: o.id, text: `${labelOf(o)} ${fmtPoint(g.p)}`, at: g.p, color: null, kind: "point" });
+    if (labelsOn(o)) out.texts.push({ key: `p:${o.id}`, id: o.id, text: `${labelOf(o)}${tangent(o)} ${fmtPoint(g.p)}`, at: g.p, color: null, kind: "point" });
   } else if (g.type === "points") {
     const colors = g.values ? scalarColors(g.values, g.colormap) : undefined;
     out.markers.push({ id: o.id, at: g.positions, color, colors, px: g.size ?? 3, alpha, extra: false });

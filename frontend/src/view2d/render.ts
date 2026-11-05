@@ -77,6 +77,8 @@ export interface DrawList {
 const KIND_ORDER: Record<TextKind, number> = { text: 0, point: 1, curve: 2, extra: 3 };
 
 const labelOf = (o: SceneObject): string => o.label ?? o.id;
+/** " tangent" for a tangent hit or contact point, whose id then stays next to its coordinates. */
+const tangent = (o: SceneObject): string => (o.meta?.tangent === true ? " tangent" : "");
 /** Result operands keep their label for hover but do not draw one in the view. */
 const labelsOn = (o: SceneObject): boolean => o.meta?.operand !== true;
 const insideRect = (r: Rect, p: Vec3): boolean => p[0] >= r.xmin && p[0] <= r.xmax && p[1] >= r.ymin && p[1] <= r.ymax;
@@ -157,7 +159,7 @@ export function buildDrawList(objects: Iterable<SceneObject>, cam: Camera2D, opt
       const at = screen(g.p);
       out.dots.push({ id: o.id, at, color, radius: POINT_PX * ws + lit, alpha, hollow: false });
       pick.dots.push({ at, index: 0 });
-      if (labelsOn(o)) out.texts.push({ key: `p:${o.id}`, id: o.id, text: `${labelOf(o)} ${fmtPoint(g.p)}`, at, color: opts.palette.text, kind: "point" });
+      if (labelsOn(o)) out.texts.push({ key: `p:${o.id}`, id: o.id, text: `${labelOf(o)}${tangent(o)} ${fmtPoint(g.p)}`, at, color: opts.palette.text, kind: "point" });
     } else if (g.type === "points") {
       const radius = (g.size ?? 3) * ws + lit;
       const scalars = g.values ? scalarColors(g.values, g.colormap) : null;
