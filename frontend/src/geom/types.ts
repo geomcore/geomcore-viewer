@@ -14,8 +14,9 @@ export type CurveGeom =
   | { type: "parabola"; frame: Frame; f: number; range?: Range }
   | { type: "hyperbola"; frame: Frame; a: number; b: number; range?: Range };
 
-/** A profile curve: an exact curve geom, or a polyline parameterized by point index (as in a pcurve). */
-export type ProfileCurve = CurveGeom | Extract<MarkerGeom, { type: "polyline" }>;
+/** A profile curve: an exact curve geom, or a polyline whose points are spaced evenly over `range`
+ * (indexed by point when it has none, as in a pcurve). */
+export type ProfileCurve = CurveGeom | { type: "polyline"; points: Vec3[]; range?: Range };
 
 export type SurfaceGeom =
   | { type: "plane"; frame: Frame; window?: Window }
