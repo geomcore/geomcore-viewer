@@ -29,7 +29,8 @@ view.add(curve, label="spline")
 view.add(TrimmedCurve3D(curve, 0.25, 0.75), label="piece", color="#00798c")
 
 # A periodic rational B-spline: a circle, exactly.
-ring = Circle3D(Point3D(0, 0, 3), Vector3D.z(), 2.0).to_bspline()
+Z = Vector3D.unit_z() if hasattr(Vector3D, "unit_z") else Vector3D.z()
+ring = Circle3D(Point3D(0, 0, 3), Z, 2.0).to_bspline()
 view.add(ring, label="ring")
 
 # A bilinear patch, with a diagonal drawn on it in (u, v).

@@ -872,14 +872,16 @@ def test_extrema_without_minima_say_empty_and_default_group_is_named():
     assert any(p["geom"].get("text", "").endswith("∅") for p in parts)
 
 
-def test_trimmed_operand_is_sampled_over_its_bounds():
+def test_trimmed_operand_travels_exact_with_its_range():
+    basis = fake("Line3D", X_LINE, origin=Point3D(0, 0, 0), direction=Vector3D(1, 0, 0))
     trimmed = type("TrimmedCurve3D", (), {
-        "bounds": lambda self: (1.0, 2.0),
-        "eval_point": lambda self, t: Point3D(t, 0.0, 0.0),
+        "basis": lambda self: basis,
+        "first": lambda self: 1.0,
+        "last": lambda self: 2.0,
     })()
     result = CurveCurveIntersection(trimmed, unit_circle(), hits=[CurveCurveHit(Point3D(1, 0, 0), 1.0, 0.0)])
     geom = by_key(to_objects(result, "T"))["T·first"]["geom"]
-    assert geom["type"] == "polyline" and geom["points"][0][0] == 1.0 and geom["points"][-1][0] == 2.0
+    assert geom == {"type": "line", "o": [0.0, 0.0, 0.0], "d": [1.0, 0.0, 0.0], "range": [1.0, 2.0]}
 
 
 def test_real_geomcore_intersections_and_extrema_display():
@@ -1058,14 +1060,13 @@ def test_live_projection_onto_a_trimmed_curve_draws_the_trimmed_range():
     trimmed_3d = TrimmedCurve3D(Line3D(P(0, 0, 0), V(1, 0, 0)), 1.0, 3.0)
     parts = to_objects(trimmed_3d.project_point(P(2, 1, 0)), "T")
     target = by_key(parts)["T·target"]
-    assert target["geom"]["type"] == "polyline"
-    assert {p[0] for p in target["geom"]["points"]} >= {1.0, 3.0}
-    assert min(p[0] for p in target["geom"]["points"]) == 1.0 and max(p[0] for p in target["geom"]["points"]) == 3.0
+    # The trimming travels as an exact curve plus its range (phase 4), not a sampled polyline.
+    assert target["geom"]["type"] == "line" and target["geom"]["range"] == [1.0, 3.0]
 
     trimmed_2d = TrimmedCurve2D(Line2D(Point2D(0, 0), Vector2D(1, 0)), 1.0, 3.0)
     parts_2d = to_objects(trimmed_2d.project_point(Point2D(2, 1)), "U")
     target_2d = by_key(parts_2d)["U·target"]
-    assert target_2d["geom"]["type"] == "polyline"
+    assert target_2d["geom"]["type"] == "line" and target_2d["geom"]["range"] == [1.0, 3.0]
     assert by_key(parts_2d)["U·closest"]["geom"]["p"][2] == 0.0
 
 
@@ -1120,7 +1121,7 @@ def test_degenerate_isos_from_real_geomcore_are_points():
     [pole] = to_objects(Sphere(P(0, 0, 0), 2.0).v_iso(math.pi / 2), "pole")
     assert pole["geom"]["type"] == "point"
     assert pole["geom"]["p"] == pytest.approx([0.0, 0.0, 2.0], abs=1e-12)
-    cone = Cone(P(0, 0, 0), V.z(), 0.5, 1.0)
+    cone = Cone(P(0, 0, 0), world_z(V), 0.5, 1.0)
     [apex] = to_objects(cone.v_iso(-1.0 / math.sin(0.5)), "apex")
     assert apex["geom"]["type"] == "point"
     [ring] = to_objects(cone.v_iso(0.0), "ring")
