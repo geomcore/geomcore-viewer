@@ -37,7 +37,7 @@ The viewer never computes intersections or any other geometric query.
 | `source` | no | client-side type name, e.g. `Ellipse3D` |
 | `style` | no | `color` (CSS), `width` (px), `dashed`, `opacity` (0–1; surfaces and meshes default to 0.45 when the scene holds a curve, polyline or pcurve, else 1) |
 | `extras` | no | curves: `foci`, `center`, `axes`, `asymptotes`, `directrix`, `vertex`; B-spline/Bézier curves: `poles` (array of points → control polygon and dots), `knots` (array of points → dots), `comb` (`{scale, teeth: [[base, tip], …]}` → teeth and their envelope); surfaces: `isolines: [nu, nv]` (or `true` for 12 × 6; drawn at the middle of each cell of the window), `wire` (lines only: the isolines, 24 × 12 by default, and the window's edges), `normals` (array of `[base, tip]` segments). The Python client computes the point/segment arrays from the exact geomcore object (`poles=True`, `knots=True`, `comb=scale`, `normals=n`); the page draws them as extras. Unknown extras are ignored. |
-| `meta` | no | free-form client data. The Python client sets `tag` (the intersection result's tag, e.g. `"points"`) and `params` (the numbers of the hit, e.g. `[t, s]` for `(t, P, s)`; a non-finite one is `null`); the 2D tooltip shows `params`. |
+| `meta` | no | free-form client data. The Python client sets `tag` (the intersection result's tag, e.g. `"points"`) and `params` (the numbers of the hit, e.g. `[t, s]` for `(t, P, s)`; a non-finite one is `null`); the 2D tooltip shows `params`. `operand: true` marks a result's operand or projection target: the views draw no label for it (hovering still names it). |
 
 `view` is `"auto"`, `"2d"` or `"3d"`. Vectors are `[x, y, z]`; a
 2-component vector is read as `[x, y, 0]`. Every `frame` carries all three
@@ -72,7 +72,10 @@ Reserved for when geomcore exposes B-spline getters (clients send
 `polyline` / `mesh` until then): `bspline_curve`, `bspline_surface`.
 
 `extrusion.profile` and `revolution.profile` are any curve type above or a
-`polyline`; a polyline's parameter is its point index (segment `i` spans
+`polyline`. A polyline profile may carry `range: [t0, t1]` (t0 ≠ t1): its
+points are then spaced evenly over that parameter interval, which is how a
+sampled B-spline or Bézier profile keeps the kernel's parametrization.
+Without `range` its parameter is the point index (segment `i` spans
 `t ∈ [i, i + 1]`, as in a `pcurve`). A revolution's `direction` is the axis
 direction and must be non-zero.
 
@@ -90,7 +93,10 @@ Radii (`r`, `a`, `b`, `R`) must be positive and `f` non-zero.
   profile and v, `revolution` v for an unbounded profile) should always be
   given. When one is missing the viewer draws it over ±the half-size of the
   scene's view box (1.5 × the scene's half-extent, at least 1) and does not
-  flag the object. The Python client always fills `window` itself, from the
+  flag the object. A swept profile's parameter is not a length, so that
+  half-size is converted: ÷|d| for a `line`, `min(h, 2√(|f|·h))` for a
+  `parabola`, `asinh(h / max(a, b))` for a `hyperbola`, and an extrusion's
+  sweep v is ÷|direction|. The Python client always fills `window` itself, from the
   objects already added (and from a profile's own bounds for
   `extrusion`/`revolution`: u for an extrusion, v for a revolution).
 - A `pcurve` takes its surface's window. A `line` or `circle` is clipped

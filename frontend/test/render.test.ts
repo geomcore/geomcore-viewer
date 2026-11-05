@@ -81,6 +81,18 @@ describe("buildDrawList", () => {
     expect(list.texts.filter((t) => t.kind === "extra").map((t) => t.text)).toEqual(["F₁", "F₂"]);
   });
 
+  it("draws client-computed extras (control polygon, knots, comb) in the plane view too", () => {
+    const b = obj("B", { type: "polyline", points: [[0, 0, 0], [1, 0, 0]] }, {
+      style: { color: "#d1495b" },
+      extras: { poles: [[0, 0, 0], [0.5, 1, 0], [1, 0, 0]], knots: [[0.5, 0, 0]], comb: { teeth: [[[0.5, 0.5, 0], [0.5, 0, 0]]] } },
+    });
+    const list = buildDrawList([b], cam, opts());
+    const extra = list.strokes.find((s) => s.extra)!;
+    expect(extra.color).toBe(mixHex("#d1495b", PALETTES.light.bg, EXTRA_MIX));
+    expect(extra.paths.flat().some((p) => p[1] === 300 - 100)).toBe(true); // the control polygon's apex (0.5, 1)
+    expect(list.dots.filter((d) => d.hollow)).toHaveLength(4); // three poles and one knot
+  });
+
   it("widens lines by half in presentation mode and more when highlighted", () => {
     const c = obj("C", { type: "circle", frame, r: 1 });
     expect(buildDrawList([c], cam, opts({ widthScale: 1.5 })).strokes[0].width).toBe(3.75);
