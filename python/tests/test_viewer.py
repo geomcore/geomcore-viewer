@@ -19,7 +19,7 @@ class Point3D:
 
 
 class Plane:
-    def eval_point(self, u, v):
+    def point_at(self, u, v):
         return Point3D(u, v, 0.0)
 
 
@@ -42,7 +42,7 @@ class Line3D:
     def direction(self):
         return self.d
 
-    def eval_point(self, t):
+    def point_at(self, t):
         return Point3D(self.o.x + t * self.d.x, self.o.y + t * self.d.y, self.o.z + t * self.d.z)
 
 
@@ -333,6 +333,15 @@ def test_points_and_mesh_take_numpy_arrays(server):
     assert geoms["p"]["values"] == [0.25, 0.75]
     assert geoms["m"]["values"] == [1.0, 2.0, 3.0]
     json.dumps(_scene(server))  # every numpy scalar became a JSON number
+
+
+def test_mesh_takes_indices_as_rows(server):
+    np = pytest.importorskip("numpy")
+    view = make(server)
+    view.mesh(np.array([[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]]),
+              np.array([[0, 1, 2], [1, 3, 2]]), label="m")
+    [obj] = _scene(server)["objects"]
+    assert obj["geom"]["indices"] == [0, 1, 2, 1, 3, 2]
 
 
 def test_escape_hatches_coerce_inputs(server):
@@ -665,7 +674,7 @@ def test_pcurve_needs_a_surface_in_the_scene(server):
 
 class BSplineSurface:
     """Duck-typed stand-in named like the geomcore class (adapt dispatches on class name)."""
-    def eval_point(self, u, v):
+    def point_at(self, u, v):
         return Point3D(u, v, u * v)
 
     def u_degree(self):
@@ -740,11 +749,9 @@ def test_box_helper_sends_min_and_max(server):
 def test_u_window_narrows_a_revolution_whose_profile_is_bounded(server):
     """The revolution's bounded profile already sets a v window; u= must still apply."""
     geomcore = pytest.importorskip("geomcore")
-    if not hasattr(geomcore, "Axis") or not hasattr(geomcore.surfaces, "RevolutionSurface"):
+    if not hasattr(geomcore, "Axis") or not hasattr(geomcore, "RevolutionSurface"):
         pytest.skip("needs geomcore >= 0.43")
-    from geomcore import Axis, Point, Vector
-    from geomcore.curves import Circle
-    from geomcore.surfaces import RevolutionSurface
+    from geomcore import Axis, Circle, Point, RevolutionSurface, Vector
 
     view = make(server)
     surface = RevolutionSurface(Circle(Point(3, 0, 0), Vector(0, 1, 0), 1.0), Axis(Point(0, 0, 0), Vector(0, 0, 1)))

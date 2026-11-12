@@ -10,6 +10,7 @@ import urllib.request
 import uuid
 import warnings
 import webbrowser
+from collections.abc import Iterable
 from contextlib import contextmanager
 from pathlib import Path
 from urllib.parse import quote
@@ -168,7 +169,7 @@ class Viewer:
     def mesh(self, vertices, indices, *, values=None, colormap: str | None = None,
              label: str | None = None, group: str | None = None, **options):
         """One mesh; ``values=`` (one per vertex, with a ``colormap``) colours it by scalar."""
-        geom = {"type": "mesh", "vertices": [as_vec(p) for p in vertices], "indices": [int(i) for i in indices]}
+        geom = {"type": "mesh", "vertices": [as_vec(p) for p in vertices], "indices": _flat_indices(indices)}
         if values is not None:
             geom["values"] = _scalars(values, len(geom["vertices"]), "vertex")
             geom["colormap"] = _colormap(colormap, "mesh")
@@ -512,6 +513,17 @@ def _colormap(name: str | None, method: str) -> str:
     if name not in COLORMAPS:
         raise ValueError(f"{method}: unknown colormap {name!r}; expected one of {', '.join(COLORMAPS)}")
     return name
+
+
+def _flat_indices(indices) -> list[int]:
+    """A flat triangle list from a flat sequence, an (M, 3) array, or a mix of both."""
+    flat: list[int] = []
+    for item in indices:
+        if isinstance(item, Iterable) and not isinstance(item, (str, bytes)):
+            flat.extend(int(i) for i in item)
+        else:
+            flat.append(int(item))
+    return flat
 
 
 def _scalars(values, count: int, unit: str) -> list[float]:

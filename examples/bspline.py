@@ -10,9 +10,7 @@ from __future__ import annotations
 import argparse
 import math
 
-from geomcore import Point, Vector
-from geomcore.curves import BSplineCurve, Circle, TrimmedCurve
-from geomcore.surfaces import BSplineSurface
+from geomcore import BSplineCurve, BSplineSurface, Circle, Point, TrimmedCurve, Vector
 
 import geomcore_viewer as gv
 

@@ -9,8 +9,7 @@ from __future__ import annotations
 
 import argparse
 
-from geomcore import Frame, Point, Vector
-from geomcore.surfaces import Cone, Cylinder, Plane, Sphere
+from geomcore import Cone, Cylinder, Frame, Plane, Point, Sphere, Vector
 
 import geomcore_viewer as gv
 

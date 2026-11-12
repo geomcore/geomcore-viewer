@@ -134,7 +134,8 @@ the lines behind them. The plane view ignores both extras, and so does a
   one full period; `line`/`parabola`/`hyperbola` are infinite and the
   viewer draws the part that crosses the visible region; a `bspline_curve`
   draws its knot domain. Clients set `range`
-  from geomcore's `TrimmedCurve3D`/`TrimmedCurve2D` (`first`/`last`), so
+  from geomcore's `TrimmedCurve3D`/`TrimmedCurve2D` (`start_parameter`/
+  `end_parameter`), so
   segments, arcs, conic pieces and B-spline pieces stay exact.
 - Surfaces carry `window: {"u": [a, b], "v": [a, b]}`. Closed directions
   default to their full period (`cylinder`/`cone` u, `sphere` u and
