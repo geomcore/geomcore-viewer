@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+Follows geomcore 0.44–0.45's API renames (`point_at`, `focal_distance`,
+`half_angle`, `reference_radius`, `start_parameter`/`end_parameter`,
+`min_corner`/`max_corner`, curve-surface hits' `u`/`v`) and declares that
+supported range, so pip refuses an incompatible pair. `TrimmedSurface` is
+drawn as its basis surface windowed to the trimmed rectangle. `view.mesh`
+accepts triangle indices as an `(M, 3)` array. Examples and READMEs import
+shapes from the geomcore root.
+
 ## 0.4.0 - 2026-11-05
 
 Draws objects from geomcore 0.39 and later, whose classes were renamed

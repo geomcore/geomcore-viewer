@@ -7,22 +7,20 @@ browser tab that updates as your script, debugger or notebook runs.
 
 ```python
 # conics.py — run with: python conics.py   (re-run after every edit)
-from geomcore import Frame3D, Point3D, Vector3D
-from geomcore.curves import Circle3D, Ellipse3D
+from geomcore import Circle, Ellipse, Frame, Point, Vector
 import geomcore_viewer as gv
 
 view = gv.Viewer("Ellipse ∩ circle")
-E = Ellipse3D.from_frame(Frame3D.world(), 3.0, 2.0)
-C = Circle3D(Point3D(2, 1, 0), Vector3D.z(), 1.5)
+E = Ellipse.from_frame(Frame.world(), 3.0, 2.0)
+C = Circle(Point(2, 1, 0), Vector.unit_z(), 1.5)
 
 view.add(E, label="E")
 view.add(C, label="C")
-view.add(C.intersect_ellipse(E), label="P")   # → P₁, P₂
+view.add(C.intersect(E), label="P")   # → P₁, P₂
 ```
 
-- **One verb.** `add` takes geomcore curves, surfaces and points, intersection
-  results as returned (`("points", …)`, `("two_circles", …)`, `("empty", None)` →
-  a note "P: ∅"), and lists of those.
+- **One verb.** `add` takes geomcore curves, surfaces and points, the result
+  objects of projections, intersections and curve extrema, and lists of those.
 - **Live, incremental.** The first `add` starts a background server and opens
   the tab; later runs reuse it. Re-running a script swaps the scene in place;
   inside one process (`pdb`, IPython, Jupyter) every `gv.add(x)` lands in the
@@ -38,9 +36,11 @@ view.add(C.intersect_ellipse(E), label="P")   # → P₁, P₂
 ## Install
 
 ```sh
-pip install geomcore-viewer        # stdlib only; the built viewer ships in the wheel
-pip install geomcore               # to build the objects you show
+pip install geomcore-viewer        # installs geomcore 0.44–0.45
 ```
+
+The viewer requires geomcore 0.44 or 0.45, which has the current API
+(`point_at`, `focal_distance`, `half_angle`).
 
 ## API
 
@@ -49,7 +49,7 @@ pip install geomcore               # to build the objects you show
 | `gv.Viewer(title, view="auto"\|"2d"\|"3d", keep=False)` | a scene (new run) |
 | `view.add(*objs, label=, group=, color=, width=, dashed=, opacity=, u=, v=, foci=, asymptotes=, …)` | show objects → `Handle` / list |
 | `handle.update(color=…)`, `handle.remove()` | change or remove one object |
-| `view.pcurve(curve, on=surface)` | a `Line2D`, `Circle2D` (e.g. `circle.parametrize_on(cyl)`) or `(u, v)` pairs drawn on a surface already added |
+| `view.pcurve(curve, on=surface)` | a `Line2D`, `Circle2D` (e.g. `cyl.curve_3d_to_uv(circle)`) or `(u, v)` pairs drawn on a surface already added |
 | `view.polyline(pts)`, `view.mesh(v, i)`, `view.arrow(at, vec)`, `view.text(at, s)` | raw geometry |
 | `view.clear()`, `view.save(path)`, `view.open()` | housekeeping |
 | `gv.add(...)`, `gv.clear()` | same, on the most recent viewer (handy in `pdb`) |

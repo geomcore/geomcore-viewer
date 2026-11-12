@@ -7,8 +7,7 @@ browser tab that updates as your script, debugger or notebook runs.
 
 ```python
 # conics.py — run with: python conics.py   (re-run after every edit)
-from geomcore import Frame, Point, Vector
-from geomcore.curves import Circle, Ellipse
+from geomcore import Circle, Ellipse, Frame, Point, Vector
 import geomcore_viewer as gv
 
 view = gv.Viewer("Ellipse ∩ circle")
@@ -22,9 +21,9 @@ view.add(C.intersect(E), label="P")   # → P₁, P₂
 
 - **One verb.** `add` takes geomcore curves, surfaces and points, the result
   objects of projections, intersections and curve extrema (see
-  [Drawing results](#drawing-results)), and lists of those. With geomcore ≤ 0.35
-  it also takes the older `(tag, payload)` intersection results as returned
-  (`("points", …)`, `("empty", None)` → a note "P: ∅").
+  [Drawing results](#drawing-results)), and lists of those. It also accepts the
+  older `(tag, payload)` intersection results (`("points", …)`,
+  `("empty", None)` → a note "P: ∅").
 - **Live, incremental.** The first `add` starts a background server and opens
   the tab; later runs reuse it. Re-running a script swaps the scene in place;
   inside one process (`pdb`, IPython, Jupyter) every `gv.add(x)` lands in the
@@ -40,15 +39,15 @@ view.add(C.intersect(E), label="P")   # → P₁, P₂
 ## Install
 
 ```sh
-pip install geomcore-viewer        # stdlib only; the built viewer ships in the wheel
+pip install geomcore-viewer        # installs geomcore 0.44–0.45
 ```
 
-The viewer itself has no dependencies, but the quick-start above and the scripts in
-`examples/` build their objects with geomcore 0.39 or later, whose classes have the
-current names (`Point`, `Circle`, `Ellipse`…): `pip install "geomcore>=0.39"`, or, from a
-source checkout, `PYTHONPATH=../geomcore/geomcore-py` (add `python` when running
-from this repo, as in the Development section). The adapter also still accepts the
-pre-0.39 names (`Point3D`, `Circle3D`…), so older kernels keep working.
+The viewer requires geomcore 0.44 or 0.45, which has the current API:
+`point_at`, `focal_distance`, `half_angle`. The scripts in
+`examples/` build their objects with the same root imports (`from geomcore import
+Point, Circle, Ellipse`), or, from a source checkout,
+`PYTHONPATH=../geomcore/geomcore-py` (add `python` when running from this repo,
+as in the Development section).
 
 ## API
 
@@ -57,7 +56,7 @@ pre-0.39 names (`Point3D`, `Circle3D`…), so older kernels keep working.
 | `gv.Viewer(title, view="auto"\|"2d"\|"3d", keep=False)` | a scene (new run) |
 | `view.add(*objs, label=, group=, color=, width=, dashed=, opacity=, u=, v=, resolution=, foci=, asymptotes=, poles=, knots=, comb=, normals=, hidden=, silhouette=, …)` | show objects → `Handle` / list |
 | `handle.update(color=…)`, `handle.remove()` | change or remove one object |
-| `view.pcurve(curve, on=surface)` | any 2D curve — `Line2D`/`Circle2D`, or a `TrimmedCurve2D` of one, exactly (e.g. `cyl.curve_3d_to_uv(circle)`, or `circle.parametrize_on(cyl)` before 0.43), the rest sampled to a polyline — or `(u, v)` pairs drawn on an exact surface already added (a baked `mesh` has no `(u, v)` parameters) |
+| `view.pcurve(curve, on=surface)` | any 2D curve — `Line2D`/`Circle2D`, or a `TrimmedCurve2D` of one, exactly (e.g. `cyl.curve_3d_to_uv(circle)`), the rest sampled to a polyline — or `(u, v)` pairs drawn on an exact surface already added (a baked `mesh` has no `(u, v)` parameters) |
 | `view.polyline(pts)`, `view.mesh(v, i)`, `view.box(min, max)`, `view.arrow(at, vec)`, `view.text(at, s)` | raw geometry; `polyline` takes a list of point lists, `arrow`/`text` zipped lists (a single `vec` or string repeats) |
 | `view.points(xyz, values=, colormap=, size=)`, `view.mesh(v, i, values=, colormap=)` | one point cloud / mesh, coloured per point or vertex by `values` (`viridis`, `plasma`, `turbo`, `coolwarm`, `gray`) |
 | `with view.step("tilt 45°"): …` | a lesson step: the page shows one step at a time (slider and ←/→), so each parameter value keeps its own objects |
@@ -101,15 +100,14 @@ viewer through SSH keep the same port on both ends:
 
 ## Drawing results
 
-With geomcore 0.36 or later, pass a result object straight to `add`; there is
-nothing to unpack. Supported: `CurveProjection`, `CurveProjection2D`,
+Pass a result object straight to `add`; there is nothing to unpack.
+Supported: `CurveProjection`, `CurveProjection2D`,
 `SurfaceProjection`, `CurveCurveIntersection`, `CurveCurveIntersection2D`,
 `CurveSurfaceIntersection`, `SurfaceSurfaceIntersection` and
 `CurveCurveExtrema`.
 
 ```python
-from geomcore import Frame, Point, Vector
-from geomcore.curves import Circle, Ellipse
+from geomcore import Circle, Ellipse, Frame, Point, Vector
 import geomcore_viewer as gv
 
 view = gv.Viewer("Results")
