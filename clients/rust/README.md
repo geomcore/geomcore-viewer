@@ -32,14 +32,20 @@ If no server answers, the client warns once on stderr and keeps the objects;
 | `view.add_all(points, Opts::new().label("P"))` | several objects labelled `P₁`, `P₂`, … (an empty list adds the note `P: ∅`) |
 | `view.pcurve(curve_2d, &surface_handle, opts)` | a curve in the surface's (u, v) space |
 | `view.update(&h, Style::new().color("red"))`, `view.remove(&h)` | change or remove one object |
+| `view.step("tilt 0°")?` | a lesson step scope; objects added through the guard carry its `step`, drop the guard to leave |
+| `view.batch(\|v\| { v.add(..)?; v.add(..)?; Ok(()) })?` | one request for everything added inside |
 | `view.clear()`, `view.scene()`, `view.save(path)` | housekeeping |
 
 `Geom` has one variant per protocol type (`Geom::circle(frame, r)`, `.range(t0, t1)` on curves,
-`.window(u, v)` on surfaces, `Geom::bbox(min, max)` for an axis-aligned box). With the `geomcore`
+`.window(u, v)` on surfaces, `Geom::bbox(min, max)` for an axis-aligned box,
+`Geom::extrusion(profile, direction)`, `Geom::revolution(profile, origin, direction)`).
+`Geom::points_colored(positions, values, colormap)` colours a cloud by one scalar per point.
+With the `geomcore`
 feature, geomcore's curves, surfaces, points, bounding boxes and `curve_3d_to_uv` results convert
 with `Geom::from(&x)` or pass straight to `add`: analytic curves and surfaces keep their exact
 definition, `TrimmedCurve`/`TrimmedCurve2D` keep their basis with a `range`, B-splines go exact
-(degree, poles, weights, knots, multiplicities), and the `Curve`/`Curve2D`/`Surface` and
+(degree, poles, weights, knots, multiplicities), extrusion and revolution surfaces keep their
+profile and sweep, and the `Curve`/`Curve2D`/`Surface` and
 `ElementaryCurve`/`ElementarySurface` runtime enums unwrap to their geometry.
 Iso curves (`u_iso`/`v_iso`) are ordinary curves; one that collapses to a point (a pole, an
 apex, a collapsed B-spline edge) converts to `Geom::Point`.
