@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Changed
+
+- The Rust client's `geomcore` feature now builds against geomcore 0.48 and
+  uses its renamed types (`Point`, `Circle`, `Line`, `Frame`…), `point_at`,
+  `half_angle`, `reference_radius`, `focal_distance`, `min_corner` and
+  `curve_3d_to_uv` (#44).
+
 ### Fixed
 
 - Extras (`poles`, `knots`, `comb`, `normals`) on a list of objects are computed
