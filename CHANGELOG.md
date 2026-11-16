@@ -10,6 +10,17 @@ drawn as its basis surface windowed to the trimmed rectangle. `view.mesh`
 accepts triangle indices as an `(M, 3)` array. Examples and READMEs import
 shapes from the geomcore root.
 
+### Fixed
+
+- A step name no longer moves the step slider, its buttons or the view toggle
+  (#46).
+- Result parts are listed and labelled by their own name, not the whole step
+  id; the full id stays in the tooltip (#47).
+- A point at z = 0 keeps its third coordinate in the 3D view and the panel
+  (#48).
+- An unbounded result curve stops where it leaves the drawn part of either
+  operand instead of running to the view box (#49).
+
 ## 0.4.0 - 2026-11-05
 
 Draws objects from geomcore 0.39 and later, whose classes were renamed

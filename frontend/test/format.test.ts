@@ -18,8 +18,11 @@ describe("format", () => {
     expect(fmtNum(1e20)).toBe("100000000000000000000");
   });
 
-  it("writes plane points without z", () => {
-    expect(fmtPoint([1.84, 1.62, 0])).toBe("(1.84, 1.62)");
+  it("writes plane points without z, 3D points with it", () => {
+    expect(fmtPoint([1.84, 1.62, 0], 2)).toBe("(1.84, 1.62)");
+    expect(fmtPoint([1, -2, 0.5], 2)).toBe("(1, -2)");
+    expect(fmtPoint([1.84, 1.62, 0])).toBe("(1.84, 1.62, 0)");
+    expect(fmtPoint([0, 0, 0])).toBe("(0, 0, 0)");
     expect(fmtPoint([1, -2, 0.5])).toBe("(1, -2, 0.5)");
   });
 

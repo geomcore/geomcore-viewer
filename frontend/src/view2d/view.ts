@@ -5,6 +5,7 @@ import type { Vec2 } from "../geom/vec";
 import { FrameScheduler } from "../frame";
 import type { Store, StoreEvent } from "../store";
 import { LabelItem, LabelLayer, TextMeasure } from "../ui/labels";
+import { displayName } from "../ui/names";
 import type { UiEvent, UiState } from "../ui/state";
 import { PALETTES, Palette } from "../ui/theme";
 import { Camera2D, fitCamera, panBy, resizeCamera, shouldRefit, visibleRect, worldToScreen, zoomAt } from "./camera";
@@ -321,7 +322,7 @@ export class View2D {
     const p = g.type === "point" ? g.p : g.type === "points" && hit.index !== null ? g.positions[hit.index] : null;
     if (!p) return;
     const text = `(${p[0]}, ${p[1]})`;
-    const label = o.label ?? o.id;
+    const label = displayName(o);
     if (!navigator.clipboard) {
       this.notify(`${label} ${text}: copying needs https or localhost`);
       return;

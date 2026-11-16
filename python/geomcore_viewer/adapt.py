@@ -1022,30 +1022,162 @@ def _same_value(geom: dict, existing) -> bool:
     return any({k: v for k, v in other.items() if k != "window"} == value for other in existing)
 
 
-def _operands(result, label: str, reference_points: list, u, v, existing=(), show=True,
-              resolution: int | None = None) -> list[dict]:
-    """Both intersected shapes, translucent so the result stays visible inside them. Unbounded
-    surfaces are windowed around the result and the bounded operand. An operand already in the
-    scene is not drawn again; ``show=False`` leaves both out."""
-    if not show:
-        return []
+def _operand_shapes(result, reference_points: list, u, v, resolution: int | None = None) -> list[tuple]:
+    """``(operand, part)`` for both intersected shapes, each part's geometry carrying the
+    parameter window it is drawn over. Infinite directions are windowed around the result and
+    the bounded operand, exactly as the drawn operands are."""
     operands = (result.first, result.second)
-    parts = []
-    for name, obj in zip(("first", "second"), operands):
+    shapes = []
+    for obj in operands:
         [part] = _single(obj, None, u, v, resolution)
-        parts.append({**part, "key": f"{label}·{name}", "group": label, "style": {"opacity": OPERAND_OPACITY},
-                      "meta": {"operand": True}})
+        shapes.append((obj, part))
     points = list(reference_points)
-    for part in parts:
+    for _obj, part in shapes:
         if not _INFINITE.get(part["geom"]["type"]):
             points += _geometry_reference_points(part["geom"])
-    for obj, part in zip(operands, parts):
+    for obj, part in shapes:
         if _infinite_directions(part["geom"]):
             window = part["geom"].get("window") or {}
             bounds_u, bounds_v = _operand_window(obj, points, u if u is not None else window.get("u"),
                                                  v if v is not None else window.get("v"))
             part["geom"] = with_window(part["geom"], _WINDOW_DEFAULT_HALF_SIZE, bounds_u, bounds_v)
+    return shapes
+
+
+def _operands(result, label: str, reference_points: list, u, v, existing=(), show=True,
+              resolution: int | None = None, shapes: list[tuple] | None = None) -> list[dict]:
+    """Both intersected shapes, translucent so the result stays visible inside them. Unbounded
+    surfaces are windowed around the result and the bounded operand. An operand already in the
+    scene is not drawn again; ``show=False`` leaves both out."""
+    if not show:
+        return []
+    shapes = shapes if shapes is not None else _operand_shapes(result, reference_points, u, v, resolution)
+    parts = [{**part, "key": f"{label}·{name}", "group": label, "style": {"opacity": OPERAND_OPACITY},
+              "meta": {"operand": True}}
+             for name, (_obj, part) in zip(("first", "second"), shapes)]
     return [part for part in parts if not _same_value(part["geom"], existing)]
+
+
+# --- clipping unbounded result curves ----------------------------------------
+# A line, parabola or hyperbola has no finite range, so the page draws it out to the view box.
+# Among surfaces drawn over a window, only the part where both operands are drawn should show.
+_UNBOUNDED_CURVE_TYPES = frozenset({"line", "parabola", "hyperbola"})
+_CLIP_SEARCH_LIMIT = 1e9
+_CLIP_SEARCH_SAMPLES = 16
+_CLIP_SCAN_SAMPLES = 64
+_CLIP_BISECTIONS = 40
+
+
+def _window_contains(window: dict, u: float, v: float) -> bool:
+    """True when ``(u, v)`` lies in the directions the window marks (an absent direction is free)."""
+    for value, direction in ((u, "u"), (v, "v")):
+        bounds = window.get(direction)
+        if bounds is None:
+            continue
+        low, high = float(bounds[0]), float(bounds[1])
+        tol = 1e-9 * max(1.0, abs(low), abs(high))
+        if value < low - tol or value > high + tol:
+            return False
+    return True
+
+
+def _on_drawn_operands(curve, t: float, shapes: list[tuple]) -> bool:
+    """True when the result curve's point at ``t`` lies on every operand's drawn window."""
+    try:
+        p = as_vec(curve.point_at(t))
+    except (OverflowError, ValueError, ZeroDivisionError):
+        return False  # a hyperbola far outside its window, where evaluation itself overflows
+    for operand, part in shapes:
+        window = part["geom"].get("window") or {}
+        if not window:
+            continue
+        point_class = type(operand.point_at(0.0, 0.0))
+        try:
+            projection = operand.project_point(point_class(*p))
+        except (OverflowError, ValueError, ZeroDivisionError):
+            return False
+        if not _window_contains(window, float(projection.u), float(projection.v)):
+            return False
+    return True
+
+
+def _find_inside(inside, lower: float | None, upper: float | None) -> float | None:
+    """A parameter where ``inside`` holds, scanning a finite range or expanding from 0."""
+    def allowed(t: float) -> bool:
+        return (lower is None or t >= lower) and (upper is None or t <= upper)
+
+    if lower is not None and upper is not None:
+        for i in range(_CLIP_SCAN_SAMPLES + 1):
+            t = lower + (upper - lower) * i / _CLIP_SCAN_SAMPLES
+            if inside(t):
+                return t
+        return None
+    if allowed(0.0) and inside(0.0):
+        return 0.0
+    low, step = 0.0, 1.0
+    while step <= _CLIP_SEARCH_LIMIT:
+        for i in range(1, _CLIP_SEARCH_SAMPLES + 1):
+            t = low + step * i / _CLIP_SEARCH_SAMPLES
+            if allowed(t) and inside(t):
+                return t
+            if allowed(-t) and inside(-t):
+                return -t
+        low += step
+        step *= 2.0
+    return None
+
+
+def _expand_bound(inside, t: float, direction: int, limit: float | None) -> float | None:
+    """The end of the interval of ``t`` where ``inside`` stays true, walking in ``direction``."""
+    step, good = 1.0, t
+    while step <= _CLIP_SEARCH_LIMIT:
+        nxt = good + direction * step
+        if limit is not None and (nxt - limit) * direction >= 0.0:
+            nxt = limit
+        if nxt == good:
+            return good
+        if not inside(nxt):
+            for _ in range(_CLIP_BISECTIONS):
+                mid = (good + nxt) / 2.0
+                if inside(mid):
+                    good = mid
+                else:
+                    nxt = mid
+            return good
+        good = nxt
+        if limit is not None and good == limit:
+            return good
+        step *= 2.0
+    return None
+
+
+def _clip_result_curve(part: dict, piece, shapes: list[tuple]) -> None:
+    """Limit an unbounded result curve to the parameter range over which it lies on the drawn
+    part of both operands. No drawn window leaves it unbounded, for the page to clip to its box."""
+    geom = part["geom"]
+    if geom["type"] not in _UNBOUNDED_CURVE_TYPES or "range" in geom:
+        return
+    if not any((shape["geom"].get("window") or {}) for _obj, shape in shapes):
+        return
+    bounds = getattr(piece, "parameter_range", None)
+    lower = upper = None
+    if bounds is not None:
+        lower = float(bounds[0]) if math.isfinite(bounds[0]) else None
+        upper = float(bounds[1]) if math.isfinite(bounds[1]) else None
+        if lower is not None and upper is not None and lower >= upper:
+            return
+    def inside(t: float) -> bool:
+        return _on_drawn_operands(piece.curve, t, shapes)
+
+    t0 = _find_inside(inside, lower, upper)
+    if t0 is None:
+        return
+    left = _expand_bound(inside, t0, -1, lower)
+    right = _expand_bound(inside, t0, +1, upper)
+    if left is None or right is None:
+        return
+    if math.isfinite(left) and math.isfinite(right) and left < right:
+        geom["range"] = [float(left), float(right)]
 
 
 def _sampled_range(curve, first: float, last: float) -> dict:
@@ -1141,10 +1273,13 @@ def _intersection(result, label: str | None, u=None, v=None, existing=(), operan
     """
     label = label or f"{type(result.first).__name__} × {type(result.second).__name__}"
     parts = []
+    curve_parts = []
     for i, piece in enumerate(getattr(result, "curves", ()), start=1):
         [curve] = _single(piece.curve, None, None, None, resolution)
-        parts.append({**curve, "key": f"{label}·curve{i}", "group": label, "style": {"color": ACCENT},
-                      "keeps_style": ("opacity",), "label": "tangent" if piece.tangent else None})
+        part = {**curve, "key": f"{label}·curve{i}", "group": label, "style": {"color": ACCENT},
+                "keeps_style": ("opacity",), "label": "tangent" if piece.tangent else None}
+        curve_parts.append((part, piece))
+        parts.append(part)
     for i, hit in enumerate(getattr(result, "hits", ()), start=1):
         # A tangent hit keeps the generated name (P·hit1) and says "tangent" in meta: the row and
         # the 3D label show both the name and the tangency.
@@ -1159,13 +1294,16 @@ def _intersection(result, label: str | None, u=None, v=None, existing=(), operan
     status_parts = _completeness_parts(result, label)
     parts += [p for p in status_parts if p["geom"]["type"] != "note"]
     reference_points = [point for p in parts for point in _geometry_reference_points(p["geom"])]
+    shapes = _operand_shapes(result, reference_points, u, v, resolution)
+    for part, piece in curve_parts:
+        _clip_result_curve(part, piece, shapes)
     notes = [p for p in status_parts if p["geom"]["type"] == "note"]
     if not result:
         notes.insert(0, _note(EMPTY_NOTES["empty"], label))
     if hasattr(result, "is_coincident") and result.is_coincident():
         notes.insert(0, _note(INFO_NOTES["coincident"], label, "info", "coincident"))
     notes.insert(0, _note(f"method: {result.method.name.lower()}", label, "info", "method"))
-    return _operands(result, label, reference_points, u, v, existing, operands, resolution) + parts + notes
+    return _operands(result, label, reference_points, u, v, existing, operands, resolution, shapes) + parts + notes
 
 
 def _extrema(result, label: str | None, u=None, v=None, existing=(), operands=True,

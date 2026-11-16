@@ -220,9 +220,15 @@ describe("objectDraw3D", () => {
     expect(d.texts[0].text).toBe("P (1, 2, 3)");
   });
 
-  it("labels a tangent hit with its name, the tangency and its coordinates", () => {
+  it("labels a tangent hit with its name, the tangency and three coordinates", () => {
     const hit = obj("P·hit1", { type: "point", p: [0, -2, 0] }, { meta: { tag: "hit", tangent: true } });
-    expect(objectDraw3D(hit, ctx([])).texts[0].text).toBe("P·hit1 tangent (0, -2)");
+    expect(objectDraw3D(hit, ctx([])).texts[0].text).toBe("P·hit1 tangent (0, -2, 0)");
+  });
+
+  it("labels a result part by its name within the group, without the step", () => {
+    const part = obj("tilt·intersection·contact2", { type: "point", p: [1, 2, 3] },
+      { step: "tilt", group: "intersection", meta: { tag: "contact", tangent: true } });
+    expect(objectDraw3D(part, ctx([])).texts[0].text).toBe("contact2 tangent (1, 2, 3)");
   });
 
   it("draws client-computed extras as extra lines and dots", () => {

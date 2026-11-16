@@ -9,6 +9,7 @@ import type { Vec2, Vec3 } from "../geom/vec";
 import type { SceneObject } from "../protocol";
 import { colorOf } from "../ui/colors";
 import { fmtNum, fmtParams, fmtPoint } from "../ui/format";
+import { displayName } from "../ui/names";
 import { scalarColors } from "../ui/colormap";
 import { Palette, mixHex } from "../ui/theme";
 import { Camera2D, screenToWorld, visibleRect, worldToScreen } from "./camera";
@@ -76,7 +77,7 @@ export interface DrawList {
 
 const KIND_ORDER: Record<TextKind, number> = { text: 0, point: 1, curve: 2, extra: 3 };
 
-const labelOf = (o: SceneObject): string => o.label ?? o.id;
+const labelOf = displayName;
 /** " tangent" for a tangent hit or contact point, whose id then stays next to its coordinates. */
 const tangent = (o: SceneObject): string => (o.meta?.tangent === true ? " tangent" : "");
 /** Result operands keep their label for hover but do not draw one in the view. */
@@ -163,7 +164,7 @@ export function buildDrawList(objects: Iterable<SceneObject>, cam: Camera2D, opt
       const at = screen(g.p);
       out.dots.push({ id: o.id, at, color, radius: POINT_PX * ws + lit, alpha, hollow: false });
       pick.dots.push({ at, index: 0 });
-      if (labelsOn(o)) out.texts.push({ key: `p:${o.id}`, id: o.id, text: `${labelOf(o)}${tangent(o)} ${fmtPoint(g.p)}`, at, color: opts.palette.text, kind: "point" });
+      if (labelsOn(o)) out.texts.push({ key: `p:${o.id}`, id: o.id, text: `${labelOf(o)}${tangent(o)} ${fmtPoint(g.p, 2)}`, at, color: opts.palette.text, kind: "point" });
     } else if (g.type === "points") {
       const radius = (g.size ?? 3) * ws + lit;
       const scalars = g.values ? scalarColors(g.values, g.colormap) : null;
@@ -200,7 +201,7 @@ export function buildDrawList(objects: Iterable<SceneObject>, cam: Camera2D, opt
 /** Tooltip lines for a hover hit: "label · type", the curve parameter, the coordinates, `meta.params`. */
 export function describeHit(o: SceneObject, hit: Hit, cam: Camera2D): string[] {
   const g = o.geom;
-  const lines = [`${labelOf(o)} · ${g.type}`];
+  const lines = [`${o.label ?? o.id} · ${g.type}`];
   let at: Vec3;
   if (g.type === "point") {
     at = g.p;
@@ -213,7 +214,7 @@ export function describeHit(o: SceneObject, hit: Hit, cam: Camera2D): string[] {
     const [x, y] = screenToWorld(cam, hit.at[0], hit.at[1]);
     at = [x, y, 0];
   }
-  lines.push(fmtPoint(at));
+  lines.push(fmtPoint(at, 2));
   const params = fmtParams(o.meta?.params);
   if (params !== null) lines.push(`params ${params}`);
   return lines;

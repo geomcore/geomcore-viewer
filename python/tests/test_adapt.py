@@ -1195,8 +1195,11 @@ class CurveSurfaceHit:
 
 
 class IntersectionCurve:
-    def __init__(self, curve, tangent=False):
+    def __init__(self, curve, tangent=False, parameter_range=(-math.inf, math.inf),
+                 first_uv_curve=None, second_uv_curve=None):
         self.curve, self.tangent = curve, tangent
+        self.parameter_range = parameter_range
+        self.first_uv_curve, self.second_uv_curve = first_uv_curve, second_uv_curve
 
 
 class _Intersection:
@@ -1253,6 +1256,25 @@ CIRCLE = {"type": "circle", "frame": _frame([0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0
 
 def x_line():
     return fake("Line3D", X_LINE, origin=Point3D(0, 0, 0), direction=Vector3D(1, 0, 0))
+
+
+Z_LINE = {"type": "line", "o": [0.0, 0.0, 0.0], "d": [0.0, 0.0, 1.0]}
+
+
+def z_line():
+    return fake("Line3D", Z_LINE, origin=Point3D(0, 0, 0), direction=Vector3D(0, 0, 1))
+
+
+class _ZProjection:
+    def __init__(self, point):
+        self.u, self.v = 0.0, point.z
+
+
+def z_plane():
+    """A plane whose (u, v) are (0, z): the second parameter follows the line's t."""
+    plane = fake("Plane", XY_PLANE)
+    type(plane).project_point = lambda self, point: _ZProjection(point)
+    return plane
 
 
 def unit_circle():
@@ -1501,6 +1523,26 @@ def test_trimmed_operand_travels_exact_with_its_range():
     assert geom == {"type": "line", "o": [0.0, 0.0, 0.0], "d": [1.0, 0.0, 0.0], "range": [1.0, 2.0]}
 
 
+def test_real_unbounded_result_curve_is_clipped_to_the_operand_windows():
+    gc = real_geomcore()
+    P, V = gc.Point3D, gc.Vector3D
+    Cone = gc.Cone
+    if not hasattr(Cone, "from_apex"):
+        pytest.skip("needs a geomcore whose Cone has from_apex")
+
+    rho = 1.0
+
+    def around(axis, half_angle):
+        distance = rho / math.sin(half_angle)
+        return Cone.from_apex(P(-axis.x * distance, -axis.y * distance, -axis.z * distance), axis, half_angle)
+
+    result = around(V(0, 0, 1), math.radians(30)).intersect(around(V(1, 0, 0), math.radians(60)))
+    parabola = by_key(to_objects(result, "C", v=(-10.0, 10.0)))["C·curve1"]["geom"]
+    assert parabola["type"] == "parabola"
+    assert parabola["range"][0] < 0.0 < parabola["range"][1]
+    assert 3.0 < parabola["range"][1] < 5.0  # where the curve reaches v = ±10 on the cones
+
+
 def test_real_geomcore_intersections_and_extrema_display():
     gc = real_geomcore()
     P, V, Point2D, Vector2D = gc.Point3D, gc.Vector3D, gc.Point2D, gc.Vector2D
@@ -1549,6 +1591,32 @@ def test_user_window_wins_over_the_operand_window():
     result = SurfaceSurfaceIntersection(xy_plane(), xy_plane())
     window = by_key(to_objects(result, "N", u=(0, 2), v=(-1, 1)))["N·first"]["geom"]["window"]
     assert window == {"u": [0.0, 2.0], "v": [-1.0, 1.0]}
+
+
+def test_unbounded_result_curve_is_clipped_to_the_drawn_operand_windows():
+    result = SurfaceSurfaceIntersection(z_plane(), z_plane(), curves=[IntersectionCurve(z_line())])
+    geom = by_key(to_objects(result, "C", v=(-1.0, 2.0)))["C·curve1"]["geom"]
+    assert geom["type"] == "line" and geom["range"] == pytest.approx([-1.0, 2.0], abs=1e-6)
+
+
+def test_unbounded_result_curve_keeps_a_finite_parameter_range():
+    result = SurfaceSurfaceIntersection(z_plane(), z_plane(),
+                                        curves=[IntersectionCurve(z_line(), parameter_range=(-0.5, 0.5))])
+    geom = by_key(to_objects(result, "C", v=(-1.0, 2.0)))["C·curve1"]["geom"]
+    assert geom["range"] == pytest.approx([-0.5, 0.5], abs=1e-6)
+
+
+def test_unbounded_result_curve_keeps_a_half_open_parameter_range():
+    result = SurfaceSurfaceIntersection(z_plane(), z_plane(),
+                                        curves=[IntersectionCurve(z_line(), parameter_range=(0.0, math.inf))])
+    geom = by_key(to_objects(result, "C", v=(-1.0, 2.0)))["C·curve1"]["geom"]
+    assert geom["range"] == pytest.approx([0.0, 2.0], abs=1e-6)
+
+
+def test_a_bounded_result_curve_is_not_clipped():
+    result = SurfaceSurfaceIntersection(z_plane(), z_plane(), curves=[IntersectionCurve(unit_circle())])
+    geom = by_key(to_objects(result, "C", v=(-1.0, 2.0)))["C·curve1"]["geom"]
+    assert geom["type"] == "circle" and "range" not in geom
 
 
 def unit_circle_surface():

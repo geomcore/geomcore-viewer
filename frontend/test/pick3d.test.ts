@@ -72,7 +72,7 @@ describe("describeHit3D", () => {
 
   it("shows a curve's t and a point's coordinates", () => {
     const c: SceneObject = { id: "C", geom: { type: "circle", frame: world, r: 1 } };
-    expect(describeHit3D(c, hit({ t: Math.PI }), lookup)).toEqual(["C · circle", "t = 3.1416", "(-1, 0)"]);
+    expect(describeHit3D(c, hit({ t: Math.PI }), lookup)).toEqual(["C · circle", "t = 3.1416", "(-1, 0, 0)"]);
     const p: SceneObject = { id: "P", geom: { type: "point", p: [1, 2, 3] } };
     expect(describeHit3D(p, hit({ index: 0 }), lookup)).toEqual(["P · point", "(1, 2, 3)"]);
   });

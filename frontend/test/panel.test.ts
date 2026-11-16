@@ -7,9 +7,9 @@ import { UiState } from "../src/ui/state";
 const obj = (id: string, geom: unknown, extra: Partial<SceneObject> = {}) => ({ id, geom, ...extra }) as SceneObject;
 const frame = { o: [0, 0, 0], x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1] };
 
-function storeOf(objects: SceneObject[]): Store {
+function storeOf(objects: SceneObject[], view: "auto" | "2d" | "3d" = "auto"): Store {
   const store = new Store();
-  store.reset({ version: 2, title: "", run: null, view: "auto", objects }, [{ id: "bad", message: "unknown type" }]);
+  store.reset({ version: 2, title: "", run: null, view, objects }, [{ id: "bad", message: "unknown type" }]);
   return store;
 }
 
@@ -43,6 +43,26 @@ describe("panelModel", () => {
     const hit = obj("P·hit1", { type: "point", p: [1, 0, 0] }, { meta: { tag: "hit", tangent: true } });
     const [row] = panelModel(storeOf([hit]), new UiState(null)).groups[0].rows;
     expect(row).toMatchObject({ kind: "object", label: "P·hit1", detail: "tangent, (1, 0)" });
+  });
+
+  it("shows a result part by its name within its group, without the step", () => {
+    const part = obj("tilt·intersection·contact2", { type: "point", p: [1, 2, 3] },
+      { group: "intersection", step: "tilt", meta: { tag: "contact", tangent: true } });
+    const plain = obj("tilt·ab12cd-1", { type: "point", p: [0, 0, 1] }, { step: "tilt" });
+    const ui = new UiState(null);
+    ui.setSteps(["tilt"]);
+    const rows = panelModel(storeOf([part, plain]), ui).groups.flatMap((g) => g.rows);
+    expect(rows.find((r) => r.id === "tilt·intersection·contact2"))
+      .toMatchObject({ label: "contact2", detail: "tangent, (1, 2, 3)" });
+    expect(rows.find((r) => r.id === "tilt·ab12cd-1")).toMatchObject({ label: "ab12cd-1" });
+  });
+
+  it("writes three coordinates in the 3D view, two in the plane view", () => {
+    const p = obj("P", { type: "point", p: [1, 2, 0] }, { label: "P" });
+    const detail = (view: "2d" | "3d") =>
+      panelModel(storeOf([p], view), new UiState(null)).groups[0].rows[0];
+    expect(detail("3d")).toMatchObject({ detail: "(1, 2, 0)" });
+    expect(detail("2d")).toMatchObject({ detail: "(1, 2)" });
   });
 
   it("lists only the step being shown", () => {
