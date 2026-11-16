@@ -149,6 +149,8 @@ pub struct Object {
     pub geom: Geom,
     pub label: Option<String>,
     pub group: Option<String>,
+    /// The lesson step it belongs to; `None` shows in every step.
+    pub step: Option<String>,
     /// Absent on notes, which have no style.
     pub style: Option<Style>,
     pub extras: Map<String, Value>,
@@ -164,6 +166,9 @@ impl Object {
         }
         if let Some(group) = &self.group {
             m.insert("group".into(), json!(group));
+        }
+        if let Some(step) = &self.step {
+            m.insert("step".into(), json!(step));
         }
         if let Some(style) = &self.style {
             m.insert("style".into(), style.to_json());
@@ -199,6 +204,7 @@ mod tests {
             geom: Geom::ellipse(Frame::WORLD, 3.0, 2.0),
             label: Some("E".into()),
             group: Some("conics".into()),
+            step: None,
             style: Some(Style::new().color("#d1495b").width(3.0).dashed(false).opacity(1.0)),
             extras: Opts::new().extra("foci", true).extras,
         };
@@ -221,6 +227,7 @@ mod tests {
             geom: Geom::note("∅", NoteLevel::Info),
             label: None,
             group: None,
+            step: None,
             style: None,
             extras: Map::new(),
         };

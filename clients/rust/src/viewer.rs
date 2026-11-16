@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use std::f64::consts::{FRAC_PI_2, TAU};
 use std::fmt;
 use std::hash::{BuildHasher, Hasher};
+use std::ops::{Deref, DerefMut};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -130,6 +131,10 @@ impl Builder {
             unsent: Vec::new(),
             pending_removals: Vec::new(),
             pending_clear: false,
+            steps: Vec::new(),
+            steps_unsent: false,
+            step: None,
+            batch_depth: 0,
             run_sent: false,
             resync: false,
             online: false,
@@ -184,10 +189,14 @@ pub struct Viewer {
     endpoint: Endpoint,
     run: String,
     objects: Vec<Object>,
-    families: HashMap<String, Vec<String>>, // label → ids its last add produced
+    families: HashMap<(Option<String>, String), Vec<String>>, // (step, label) → ids its last add produced
     unsent: Vec<String>,
     pending_removals: Vec<String>, // deletes the server has not acknowledged yet
     pending_clear: bool,
+    steps: Vec<String>,
+    steps_unsent: bool,
+    step: Option<String>,
+    batch_depth: usize,
     run_sent: bool, // this run has reached a server at least once
     resync: bool,   // the server may have lost our scene: re-send everything
     online: bool,
@@ -196,6 +205,33 @@ pub struct Viewer {
     last_unanswered: Option<Instant>, // a probe that nothing answered: skip re-probing for a while
     next_color: usize,
     next_auto: usize,
+}
+
+/// A lesson step opened with [`Viewer::step`]. Add through the guard; dropping it
+/// leaves the step (and sends the step list if nothing else did).
+pub struct Step<'a> {
+    view: &'a mut Viewer,
+}
+
+impl Deref for Step<'_> {
+    type Target = Viewer;
+    fn deref(&self) -> &Viewer {
+        self.view
+    }
+}
+
+impl DerefMut for Step<'_> {
+    fn deref_mut(&mut self) -> &mut Viewer {
+        self.view
+    }
+}
+
+impl Drop for Step<'_> {
+    fn drop(&mut self) {
+        self.view.step = None;
+        self.view.steps_unsent = true;
+        let _ = self.view.flush(); // the step list still reaches an empty step
+    }
 }
 
 impl Viewer {
@@ -220,6 +256,57 @@ impl Viewer {
     /// The objects in the scene, in the order they were first added.
     pub fn objects(&self) -> &[Object] {
         &self.objects
+    }
+
+    /// The lesson steps, in the order they were opened.
+    pub fn steps(&self) -> &[String] {
+        &self.steps
+    }
+
+    /// Open a lesson step: every object added through the returned guard belongs
+    /// to `name`, and dropping the guard leaves the step. Objects added outside a
+    /// step show in every step. Steps do not nest.
+    ///
+    /// ```no_run
+    /// # use geomcore_viewer::{Frame, Geom, Opts, Viewer};
+    /// # let mut view = Viewer::new("steps")?;
+    /// {
+    ///     let mut step = view.step("tilt 0°")?;
+    ///     step.add(Geom::circle(Frame::WORLD, 1.0), Opts::new().label("C"))?;
+    /// }
+    /// # Ok::<(), geomcore_viewer::Error>(())
+    /// ```
+    pub fn step(&mut self, name: &str) -> Result<Step<'_>, Error> {
+        if name.is_empty() {
+            return Err(Error::Invalid("step needs a non-empty name".into()));
+        }
+        if let Some(current) = &self.step {
+            return Err(Error::Invalid(format!("step({name:?}) inside step({current:?}): steps do not nest")));
+        }
+        if !self.steps.iter().any(|s| s == name) {
+            self.steps.push(name.into());
+        }
+        self.steps_unsent = true;
+        self.step = Some(name.into());
+        Ok(Step { view: self })
+    }
+
+    /// Send everything added inside `f` in one request instead of one per call.
+    /// Batches nest (the outermost one sends); if `f` fails, what it added before
+    /// the error is still sent, then the error propagates.
+    pub fn batch<F>(&mut self, f: F) -> Result<(), Error>
+    where
+        F: FnOnce(&mut Viewer) -> Result<(), Error>,
+    {
+        self.batch_depth += 1;
+        let result = f(self);
+        self.batch_depth -= 1;
+        if self.batch_depth == 0 {
+            let flushed = self.flush();
+            result.and(flushed)
+        } else {
+            result
+        }
     }
 
     // -- adding --------------------------------------------------------------
@@ -259,11 +346,17 @@ impl Viewer {
     /// `curve_3d_to_uv` returns. The viewer draws it on the surface in 3D and in
     /// the (u, v) pane.
     pub fn pcurve(&mut self, curve: impl Into<Geom>, on: &Handle, opts: Opts) -> Result<Handle, Error> {
-        match self.objects.iter().find(|o| o.id == on.id) {
+        let surface = match &self.step {
+            Some(step) if self.objects.iter().any(|o| o.id == format!("{step}·{}", on.id)) => {
+                format!("{step}·{}", on.id)
+            }
+            _ => on.id.clone(),
+        };
+        match self.objects.iter().find(|o| o.id == surface) {
             Some(o) if o.geom.is_surface() => {}
             _ => return Err(Error::Invalid(format!("{}: a pcurve needs a surface of this scene", on.id))),
         }
-        let geom = Geom::Pcurve { surface: on.id.clone(), curve: Box::new(curve.into()) };
+        let geom = Geom::Pcurve { surface, curve: Box::new(curve.into()) };
         self.add(geom, opts)
     }
 
@@ -296,18 +389,23 @@ impl Viewer {
             }
         }
         if let Some(label) = family {
-            for stale in self.families.remove(&label).unwrap_or_default() {
+            let key = (self.step.clone(), label);
+            for stale in self.families.remove(&key).unwrap_or_default() {
                 if !ids.contains(&stale) {
                     self.forget(&stale);
                 }
             }
-            self.families.insert(label, ids.clone());
+            self.families.insert(key, ids.clone());
         }
         self.flush()?;
         Ok(ids.into_iter().map(|id| Handle { id }).collect())
     }
 
     fn build(&mut self, id: String, mut geom: Geom, opts: &Opts) -> Object {
+        let id = match &self.step {
+            Some(step) => format!("{step}·{id}"),
+            None => id,
+        };
         if geom.is_surface() {
             let extent = scene_extent(self.objects.iter().filter(|o| o.id != id).map(|o| &o.geom));
             fill_window(&mut geom, extent);
@@ -329,7 +427,15 @@ impl Viewer {
             Geom::Note { .. } => None,
             _ => opts.label.as_ref().map(|_| id.clone()),
         };
-        Object { id, geom, label, group: opts.group.clone(), style, extras: opts.extras.clone() }
+        Object {
+            id,
+            geom,
+            label,
+            group: opts.group.clone(),
+            step: self.step.clone(),
+            style,
+            extras: opts.extras.clone(),
+        }
     }
 
     fn next_color(&mut self) -> String {
@@ -380,6 +486,8 @@ impl Viewer {
         self.families.clear();
         self.unsent.clear();
         self.pending_removals.clear();
+        self.steps = self.step.clone().into_iter().collect();
+        self.steps_unsent = self.step.is_some();
         self.pending_clear = true;
         self.flush()
     }
@@ -393,6 +501,7 @@ impl Viewer {
             "title": self.title,
             "run": self.run,
             "view": self.view.as_str(),
+            "steps": self.steps.clone(),
             "objects": self.objects.iter().map(Object::to_json).collect::<Vec<_>>(),
         })
     }
@@ -408,7 +517,12 @@ impl Viewer {
 
     /// Bring the server up to date: pending clear, then deletes, then upserts.
     fn flush(&mut self) -> Result<(), Error> {
-        if (self.unsent.is_empty() && self.pending_removals.is_empty() && !self.pending_clear) || !self.connect() {
+        if self.batch_depth > 0 {
+            return Ok(());
+        }
+        if (self.unsent.is_empty() && self.pending_removals.is_empty() && !self.pending_clear && !self.steps_unsent)
+            || !self.connect()
+        {
             return Ok(());
         }
         if self.pending_clear {
@@ -430,7 +544,7 @@ impl Viewer {
                 }
             }
         }
-        if self.unsent.is_empty() {
+        if self.unsent.is_empty() && !self.steps_unsent {
             return Ok(());
         }
         let mut ids: Vec<String> = Vec::new();
@@ -441,7 +555,8 @@ impl Viewer {
         }
         let objects: Vec<Value> =
             ids.iter().filter_map(|id| self.objects.iter().find(|o| &o.id == id)).map(Object::to_json).collect();
-        let mut batch = json!({"objects": objects, "title": self.title, "view": self.view.as_str()});
+        let mut batch =
+            json!({"objects": objects, "title": self.title, "view": self.view.as_str(), "steps": self.steps.clone()});
         if self.resync || !self.run_sent {
             batch["run"] = json!(self.run);
             batch["keep"] = json!(self.keep);
@@ -451,6 +566,7 @@ impl Viewer {
                 self.run_sent = true;
                 self.resync = false;
                 self.unsent.clear();
+                self.steps_unsent = false;
                 Ok(())
             }
             Ok(false) => Ok(()),
@@ -532,20 +648,22 @@ fn encode(id: &str) -> String {
 
 /// Half-size for infinite surface windows: 1.5 × the farthest finite feature from
 /// the origin, or 5 for an empty scene (the Python client's `scene_extent`).
-fn scene_extent<'a>(geoms: impl Iterator<Item = &'a Geom>) -> f64 {
-    let mut reach: f64 = 0.0;
-    for g in geoms {
-        reach = reach.max(match g {
-            Geom::Point { p } => norm(*p),
-            Geom::Circle { frame, r, .. } | Geom::Sphere { frame, r, .. } => norm(frame.o) + r,
-            Geom::Ellipse { frame, a, .. } => norm(frame.o) + a,
-            Geom::Torus { frame, major, minor, .. } => norm(frame.o) + major + minor,
-            Geom::Polyline { points } => points.iter().map(|p| norm(*p)).fold(0.0, f64::max),
-            Geom::Mesh { vertices, .. } => vertices.iter().map(|p| norm(*p)).fold(0.0, f64::max),
-            Geom::Box { min, max } => norm(*min).max(norm(*max)),
-            _ => 0.0,
-        });
+fn geom_reach(g: &Geom) -> f64 {
+    match g {
+        Geom::Point { p } => norm(*p),
+        Geom::Circle { frame, r, .. } | Geom::Sphere { frame, r, .. } => norm(frame.o) + r,
+        Geom::Ellipse { frame, a, .. } => norm(frame.o) + a,
+        Geom::Torus { frame, major, minor, .. } => norm(frame.o) + major + minor,
+        Geom::Polyline { points } => points.iter().map(|p| norm(*p)).fold(0.0, f64::max),
+        Geom::Mesh { vertices, .. } => vertices.iter().map(|p| norm(*p)).fold(0.0, f64::max),
+        Geom::Box { min, max } => norm(*min).max(norm(*max)),
+        Geom::Extrusion { profile, .. } | Geom::Revolution { profile, .. } => geom_reach(profile),
+        _ => 0.0,
     }
+}
+
+fn scene_extent<'a>(geoms: impl Iterator<Item = &'a Geom>) -> f64 {
+    let reach = geoms.map(geom_reach).fold(0.0, f64::max);
     if reach > 0.0 {
         1.5 * reach
     } else {
@@ -553,7 +671,27 @@ fn scene_extent<'a>(geoms: impl Iterator<Item = &'a Geom>) -> f64 {
     }
 }
 
-/// Fill what a surface's window leaves out: full periods, else ± `extent`.
+/// A profile's finite parameter bounds, when the protocol knows them.
+fn curve_bounds(g: &Geom) -> Option<[f64; 2]> {
+    match g {
+        Geom::Circle { .. } | Geom::Ellipse { .. } => Some([0.0, TAU]),
+        Geom::BsplineCurve { degree, knots, multiplicities, periodic, .. } => {
+            let mut flat = Vec::new();
+            for (knot, mult) in knots.iter().zip(multiplicities) {
+                flat.extend(std::iter::repeat_n(*knot, *mult as usize));
+            }
+            let last = flat.len().checked_sub(1)?;
+            if *periodic {
+                Some([flat[0], flat[last]])
+            } else {
+                Some([*flat.get(*degree)?, *flat.get(last.checked_sub(*degree)?)?])
+            }
+        }
+        _ => None,
+    }
+}
+
+/// Fill what a surface's window leaves out: full periods, profile bounds, else ± `extent`.
 fn fill_window(geom: &mut Geom, extent: f64) {
     let infinite = [-extent, extent];
     let (u, v) = match geom {
@@ -561,6 +699,11 @@ fn fill_window(geom: &mut Geom, extent: f64) {
         Geom::Cylinder { .. } | Geom::Cone { .. } => ([0.0, TAU], infinite),
         Geom::Sphere { .. } => ([0.0, TAU], [-FRAC_PI_2, FRAC_PI_2]),
         Geom::Torus { .. } => ([0.0, TAU], [0.0, TAU]),
+        Geom::Extrusion { profile, direction, .. } => {
+            let half = extent / norm(*direction).max(f64::MIN_POSITIVE);
+            (curve_bounds(profile).unwrap_or(infinite), [-half, half])
+        }
+        Geom::Revolution { profile, .. } => ([0.0, TAU], curve_bounds(profile).unwrap_or(infinite)),
         _ => return,
     };
     if let Some(w) = geom.window_mut() {
@@ -630,6 +773,68 @@ mod tests {
         assert!(batches[1].get("run").is_none());
         assert_eq!(batches[1]["objects"][0]["id"], json!(format!("{}-1", &v.run()[..6])));
         assert_eq!(batches[1]["objects"][0]["style"]["color"], json!(PALETTE[1]));
+    }
+
+    #[test]
+    fn steps_scope_objects_and_send_their_list() {
+        let (port, seen) = stub::viewer();
+        let mut v = viewer(port);
+        {
+            let mut step = v.step("tilt 0°").unwrap();
+            step.add(Geom::point([0.0; 3]), Opts::new().label("P")).unwrap();
+        }
+        v.add(Geom::point([1.0, 0.0, 0.0]), Opts::new().label("Q")).unwrap();
+        assert_eq!(v.steps(), ["tilt 0°"]);
+        let batches = posted(&seen);
+        assert_eq!(batches[0]["steps"], json!(["tilt 0°"]));
+        assert_eq!(batches[0]["objects"][0]["id"], json!("tilt 0°·P"));
+        assert_eq!(batches[0]["objects"][0]["step"], json!("tilt 0°"));
+        assert!(batches.last().unwrap()["objects"][0].get("step").is_none());
+        assert_eq!(batches.last().unwrap()["steps"], json!(["tilt 0°"]));
+    }
+
+    #[test]
+    fn steps_do_not_nest_and_reopen_without_duplicating() {
+        let (port, _) = stub::viewer();
+        let mut v = viewer(port);
+        {
+            let mut step = v.step("a").unwrap();
+            assert!(step.step("b").is_err());
+            step.add(Geom::point([0.0; 3]), Opts::new().label("P")).unwrap();
+        }
+        {
+            let mut step = v.step("a").unwrap();
+            step.add(Geom::point([1.0; 3]), Opts::new().label("Q")).unwrap();
+        }
+        assert_eq!(v.steps(), ["a"]);
+        assert_eq!(v.objects().iter().map(|o| o.id.as_str()).collect::<Vec<_>>(), ["a·P", "a·Q"]);
+    }
+
+    #[test]
+    fn a_batch_sends_everything_in_one_request() {
+        let (port, seen) = stub::viewer();
+        let mut v = viewer(port);
+        v.batch(|v| {
+            v.add(Geom::point([0.0; 3]), Opts::new().label("A"))?;
+            v.add(Geom::point([1.0; 3]), Opts::new().label("B"))?;
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(requests(&seen), ["GET /api/health", "POST /api/objects"]);
+        let batches = posted(&seen);
+        assert_eq!(batches[0]["objects"].as_array().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn a_batch_still_sends_what_was_added_before_an_error() {
+        let (port, seen) = stub::viewer();
+        let mut v = viewer(port);
+        let out = v.batch(|v| {
+            v.add(Geom::point([0.0; 3]), Opts::new().label("A"))?;
+            Err(Error::Invalid("stop".into()))
+        });
+        assert!(out.is_err());
+        assert_eq!(requests(&seen), ["GET /api/health", "POST /api/objects"]);
     }
 
     #[test]
@@ -868,7 +1073,11 @@ mod tests {
         v.add(Geom::torus(Frame::WORLD, 3.0, 0.5), o().label("torus").group("surfaces")).unwrap();
         v.add(Geom::mesh(vec![[0.0; 3], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]], vec![0, 1, 2]), o().label("mesh")).unwrap();
         v.add(Geom::point([1.0, 2.0, 3.0]), o().label("point")).unwrap();
-        v.add(Geom::Points { positions: vec![[0.0; 3], [1.0; 3]], size: Some(4.0) }, o().label("points")).unwrap();
+        v.add(
+            Geom::Points { positions: vec![[0.0; 3], [1.0; 3]], size: Some(4.0), values: None, colormap: None },
+            o().label("points"),
+        )
+        .unwrap();
         v.add(Geom::arrow([0.0; 3], [0.0, 0.0, 1.0]), o().label("arrow")).unwrap();
         v.add(Geom::text([0.0, 0.0, 1.0], "z"), o().label("text")).unwrap();
         v.add_all(Vec::<Geom>::new(), o().label("note")).unwrap();

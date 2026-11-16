@@ -52,6 +52,9 @@ pub enum NoteLevel {
     Warn,
 }
 
+/// The page's scalar colour maps; the first is the default.
+pub const COLORMAPS: [&str; 5] = ["viridis", "plasma", "turbo", "coolwarm", "gray"];
+
 /// One geometry, as on the wire. Curves take an optional parameter `range`,
 /// surfaces a [`Window`]; the parametrizations are geomcore's (`protocol/SCENE.md`).
 #[derive(Debug, Clone, PartialEq)]
@@ -126,6 +129,20 @@ pub enum Geom {
         minor: f64,
         window: Window,
     },
+    /// `profile(u) + v·direction`; the profile is any curve or a polyline.
+    Extrusion {
+        profile: Box<Geom>,
+        direction: Vec3,
+        window: Window,
+    },
+    /// The profile turned about the axis (`origin`, `direction`) by `u`; `v`
+    /// is the profile's parameter.
+    Revolution {
+        profile: Box<Geom>,
+        origin: Vec3,
+        direction: Vec3,
+        window: Window,
+    },
     Mesh {
         vertices: Vec<Vec3>,
         indices: Vec<u32>,
@@ -163,6 +180,9 @@ pub enum Geom {
     Points {
         positions: Vec<Vec3>,
         size: Option<f64>,
+        /// One scalar per point; drawn through `colormap`.
+        values: Option<Vec<f64>>,
+        colormap: Option<String>,
     },
     Arrow {
         at: Vec3,
@@ -229,6 +249,12 @@ impl Geom {
     pub fn torus(frame: Frame, major: f64, minor: f64) -> Geom {
         Geom::Torus { frame, major, minor, window: Window::default() }
     }
+    pub fn extrusion(profile: impl Into<Geom>, direction: Vec3) -> Geom {
+        Geom::Extrusion { profile: Box::new(profile.into()), direction, window: Window::default() }
+    }
+    pub fn revolution(profile: impl Into<Geom>, origin: Vec3, direction: Vec3) -> Geom {
+        Geom::Revolution { profile: Box::new(profile.into()), origin, direction, window: Window::default() }
+    }
     pub fn mesh(vertices: Vec<Vec3>, indices: Vec<u32>) -> Geom {
         Geom::Mesh { vertices, indices }
     }
@@ -270,7 +296,11 @@ impl Geom {
         Geom::Point { p }
     }
     pub fn points(positions: Vec<Vec3>) -> Geom {
-        Geom::Points { positions, size: None }
+        Geom::Points { positions, size: None, values: None, colormap: None }
+    }
+    /// A point cloud coloured by one scalar per point through `colormap`.
+    pub fn points_colored(positions: Vec<Vec3>, values: Vec<f64>, colormap: &str) -> Geom {
+        Geom::Points { positions, size: None, values: Some(values), colormap: Some(colormap.into()) }
     }
     pub fn arrow(at: Vec3, vec: Vec3) -> Geom {
         Geom::Arrow { at, vec }
@@ -320,6 +350,8 @@ impl Geom {
             Geom::Cone { .. } => "cone",
             Geom::Sphere { .. } => "sphere",
             Geom::Torus { .. } => "torus",
+            Geom::Extrusion { .. } => "extrusion",
+            Geom::Revolution { .. } => "revolution",
             Geom::Mesh { .. } => "mesh",
             Geom::BsplineSurface { .. } => "bspline_surface",
             Geom::Box { .. } => "box",
@@ -340,7 +372,23 @@ impl Geom {
                 | Geom::Cone { .. }
                 | Geom::Sphere { .. }
                 | Geom::Torus { .. }
+                | Geom::Extrusion { .. }
+                | Geom::Revolution { .. }
                 | Geom::BsplineSurface { .. }
+        )
+    }
+
+    /// True for the curve kinds a swept surface can take as a profile.
+    pub fn is_curve(&self) -> bool {
+        matches!(
+            self,
+            Geom::Line { .. }
+                | Geom::Circle { .. }
+                | Geom::Ellipse { .. }
+                | Geom::Parabola { .. }
+                | Geom::Hyperbola { .. }
+                | Geom::Polyline { .. }
+                | Geom::BsplineCurve { .. }
         )
     }
 
@@ -351,6 +399,8 @@ impl Geom {
             | Geom::Cone { window, .. }
             | Geom::Sphere { window, .. }
             | Geom::Torus { window, .. }
+            | Geom::Extrusion { window, .. }
+            | Geom::Revolution { window, .. }
             | Geom::BsplineSurface { window, .. } => Some(window),
             _ => None,
         }
@@ -375,6 +425,8 @@ impl Geom {
                 positive("a", *a).or_else(|| positive("b", *b))
             }
             Geom::Torus { major, minor, .. } => positive("R", *major).or_else(|| positive("r", *minor)),
+            Geom::Extrusion { profile, direction, .. } => extrusion_problem("extrusion", profile, direction),
+            Geom::Revolution { profile, direction, .. } => extrusion_problem("revolution", profile, direction),
             Geom::Parabola { f, .. } if *f == 0.0 => Some("parabola.f must be non-zero".into()),
             Geom::Polyline { points } if points.len() < 2 => Some("polyline.points needs at least 2 points".into()),
             Geom::BsplineCurve { degree, poles, weights, knots, multiplicities, periodic, .. } => {
@@ -414,7 +466,27 @@ impl Geom {
                         )
                     })
             }
-            Geom::Points { positions, .. } if positions.is_empty() => Some("points.positions must not be empty".into()),
+            Geom::Points { positions, values, colormap, .. } => {
+                if positions.is_empty() {
+                    return Some("points.positions must not be empty".into());
+                }
+                if let Some(values) = values {
+                    if values.len() != positions.len() {
+                        return Some("points.values needs one number per point".into());
+                    }
+                    if let Some(name) = colormap {
+                        if !COLORMAPS.contains(&name.as_str()) {
+                            return Some(format!(
+                                "points.colormap must be one of {}, got {name:?}",
+                                COLORMAPS.join(", ")
+                            ));
+                        }
+                    }
+                } else if colormap.is_some() {
+                    return Some("points.colormap needs values".into());
+                }
+                None
+            }
             Geom::Mesh { vertices, indices } => {
                 let n = vertices.len();
                 (indices.is_empty() || indices.len() % 3 != 0 || indices.iter().any(|&i| i as usize >= n))
@@ -489,6 +561,17 @@ impl Geom {
                 out.extend([*major, *minor]);
                 window(out, w)
             }
+            Geom::Extrusion { profile, direction, window: w } => {
+                profile.numbers(out);
+                out.extend(direction);
+                window(out, w)
+            }
+            Geom::Revolution { profile, origin, direction, window: w } => {
+                profile.numbers(out);
+                out.extend(origin);
+                out.extend(direction);
+                window(out, w)
+            }
             Geom::Mesh { vertices, .. } => vertices.iter().for_each(|p| out.extend(p)),
             Geom::BsplineSurface { poles, weights, u_knots, v_knots, window: w, .. } => {
                 poles.iter().for_each(|p| out.extend(p));
@@ -501,9 +584,12 @@ impl Geom {
             }
             Geom::Box { min, max } => out.extend(min.iter().chain(max)),
             Geom::Point { p } => out.extend(p),
-            Geom::Points { positions, size } => {
+            Geom::Points { positions, size, values, .. } => {
                 positions.iter().for_each(|p| out.extend(p));
-                out.extend(size)
+                out.extend(size);
+                if let Some(values) = values {
+                    out.extend(values);
+                }
             }
             Geom::Arrow { at, vec } => out.extend(at.iter().chain(vec)),
             Geom::Text { at, .. } => out.extend(at),
@@ -574,6 +660,17 @@ impl Geom {
                 put("r", json!(minor));
                 put_window(&mut put, window);
             }
+            Geom::Extrusion { profile, direction, window } => {
+                put("profile", profile.to_json());
+                put("direction", json!(direction));
+                put_window(&mut put, window);
+            }
+            Geom::Revolution { profile, origin, direction, window } => {
+                put("profile", profile.to_json());
+                put("origin", json!(origin));
+                put("direction", json!(direction));
+                put_window(&mut put, window);
+            }
             Geom::Mesh { vertices, indices } => {
                 put("vertices", json!(vertices));
                 put("indices", json!(indices));
@@ -614,10 +711,16 @@ impl Geom {
                 put("max", json!(max));
             }
             Geom::Point { p } => put("p", json!(p)),
-            Geom::Points { positions, size } => {
+            Geom::Points { positions, size, values, colormap } => {
                 put("positions", json!(positions));
                 if let Some(s) = size {
                     put("size", json!(s));
+                }
+                if let Some(values) = values {
+                    put("values", json!(values));
+                }
+                if let Some(colormap) = colormap {
+                    put("colormap", json!(colormap));
                 }
             }
             Geom::Arrow { at, vec } => {
@@ -645,6 +748,17 @@ fn put_range(put: &mut impl FnMut(&str, Value), range: &Option<[f64; 2]>) {
     if let Some(r) = range {
         put("range", json!(r));
     }
+}
+
+/// A swept surface's direction is non-zero and its profile is a curve or polyline.
+fn extrusion_problem(kind: &str, profile: &Geom, direction: &Vec3) -> Option<String> {
+    if *direction == [0.0; 3] {
+        return Some(format!("{kind}.direction must be non-zero"));
+    }
+    if !profile.is_curve() {
+        return Some(format!("{kind}.profile must be a curve or a polyline, got {}", profile.kind()));
+    }
+    profile.problem()
 }
 
 /// Why a B-spline direction is malformed, mirroring the kernel's construction
@@ -814,7 +928,7 @@ mod tests {
     fn markers_and_raw_geometry_match_the_protocol() {
         assert_eq!(Geom::point([1.0, 2.0, 3.0]).to_json(), json!({"type": "point", "p": [1.0, 2.0, 3.0]}));
         assert_eq!(
-            Geom::Points { positions: vec![[0.0; 3]], size: Some(3.0) }.to_json(),
+            Geom::Points { positions: vec![[0.0; 3]], size: Some(3.0), values: None, colormap: None }.to_json(),
             json!({"type": "points", "positions": [[0.0, 0.0, 0.0]], "size": 3.0})
         );
         assert_eq!(
@@ -839,6 +953,45 @@ mod tests {
             pc.to_json(),
             json!({"type": "pcurve", "surface": "S", "curve": {"type": "line", "o": [0.0, 3.0, 0.0], "d": [1.0, 0.0, 0.0]}})
         );
+    }
+
+    #[test]
+    fn colored_points_carry_values_and_colormap() {
+        let g = Geom::points_colored(vec![[0.0; 3], [1.0, 0.0, 0.0]], vec![0.5, 2.0], "plasma");
+        assert_eq!(
+            g.to_json(),
+            json!({"type": "points", "positions": [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
+                   "values": [0.5, 2.0], "colormap": "plasma"})
+        );
+        assert_eq!(g.problem(), None);
+        assert!(Geom::points_colored(vec![[0.0; 3]], vec![0.0], "nope").problem().unwrap().contains("colormap"));
+        let short =
+            Geom::Points { positions: vec![[0.0; 3]], size: None, values: Some(vec![1.0, 2.0]), colormap: None };
+        assert_eq!(short.problem().unwrap(), "points.values needs one number per point");
+    }
+
+    #[test]
+    fn swept_surfaces_match_the_protocol_and_check_their_profile() {
+        let e = Geom::extrusion(Geom::circle(F, 1.0), [0.0, 0.0, 2.0]);
+        assert_eq!(e.kind(), "extrusion");
+        assert!(e.problem().is_none());
+        assert_eq!(
+            e.to_json(),
+            json!({"type": "extrusion", "direction": [0.0, 0.0, 2.0],
+                   "profile": {"type": "circle", "r": 1.0,
+                               "frame": {"o": [0.0, 0.0, 0.0], "x": [1.0, 0.0, 0.0], "y": [0.0, 1.0, 0.0], "z": [0.0, 0.0, 1.0]}}})
+        );
+        let r = Geom::revolution(Geom::line([1.0, 0.0, 0.0], [0.0, 0.0, 1.0]), [0.0; 3], [0.0, 0.0, 1.0]);
+        assert_eq!(r.kind(), "revolution");
+        assert_eq!(r.to_json()["origin"], json!([0.0, 0.0, 0.0]));
+        assert_eq!(
+            Geom::extrusion(Geom::circle(F, 1.0), [0.0; 3]).problem().unwrap(),
+            "extrusion.direction must be non-zero"
+        );
+        assert!(Geom::revolution(Geom::point([0.0; 3]), [0.0; 3], [0.0, 0.0, 1.0])
+            .problem()
+            .unwrap()
+            .contains("profile must be a curve"));
     }
 
     #[test]

@@ -11,9 +11,10 @@
 use geomcore::prelude::*;
 
 use geomcore::{
-    BSplineCurve, BSplineSurface, BoundingBox, Circle, Circle2D, Cone, Curve, Curve2D, Cylinder, ElementaryCurve,
-    ElementarySurface, Ellipse, Frame as GcFrame, Hyperbola, Line, Line2D, Parabola, Plane, Point, Point2D, Sphere,
-    Surface, Torus, TrimmedCurve, TrimmedCurve2D, Vector,
+    BSplineCurve, BSplineCurve2D, BSplineSurface, BezierCurve2D, BezierSurface, BoundingBox, Circle, Circle2D, Cone,
+    Curve, Curve2D, Cylinder, ElementaryCurve, ElementarySurface, Ellipse, Ellipse2D, ExtrusionSurface,
+    Frame as GcFrame, Hyperbola, Hyperbola2D, Line, Line2D, Parabola, Parabola2D, Plane, Point, Point2D,
+    RevolutionSurface, Sphere, Surface, Torus, TrimmedCurve, TrimmedCurve2D, Vector,
 };
 
 use crate::geom::{cross, Frame, Geom, Vec3};
@@ -158,6 +159,7 @@ impl From<&Curve> for Geom {
             Curve::Parabola(c) => c.into(),
             Curve::Hyperbola(c) => c.into(),
             Curve::BSpline(c) => c.into(),
+            Curve::Bezier(c) => bspline_curve(&c.to_bspline(), None),
             other => sample(|t| p3(other.point_at(t)), other.bounds()),
         }
     }
@@ -221,11 +223,32 @@ impl From<&Circle2D> for Geom {
     }
 }
 
+/// A non-line/circle 2D kind: the pane draws it as a sampled polyline over its bounds.
+macro_rules! sampled2d {
+    ($($kind:ty),*) => { $( impl From<&$kind> for Geom {
+        fn from(c: &$kind) -> Geom {
+            sample(
+                |t| {
+                    let p = c.point_at(t);
+                    [p.x, p.y, 0.0]
+                },
+                c.bounds(),
+            )
+        }
+    } )* };
+}
+sampled2d!(Ellipse2D, Parabola2D, Hyperbola2D, BSplineCurve2D, BezierCurve2D);
+
 impl From<&Curve2D> for Geom {
     fn from(c: &Curve2D) -> Geom {
         match c {
             Curve2D::Line(c) => c.into(),
             Curve2D::Circle(c) => c.into(),
+            Curve2D::Ellipse(c) => c.into(),
+            Curve2D::Parabola(c) => c.into(),
+            Curve2D::Hyperbola(c) => c.into(),
+            Curve2D::BSpline(c) => c.into(),
+            Curve2D::Bezier(c) => c.into(),
             other => sample(
                 |t| {
                     let p = other.point_at(t);
@@ -251,6 +274,22 @@ impl From<&TrimmedCurve2D<Circle2D>> for Geom {
         Geom::from(t.basis()).range(t.start_parameter(), t.end_parameter())
     }
 }
+
+/// A trimmed piece of a kind with no exact protocol form: sample only the trimmed range.
+macro_rules! trimmed2d_sampled {
+    ($($kind:ty),*) => { $( impl From<&TrimmedCurve2D<$kind>> for Geom {
+        fn from(t: &TrimmedCurve2D<$kind>) -> Geom {
+            sample(
+                |u| {
+                    let p = t.point_at(u);
+                    [p.x, p.y, 0.0]
+                },
+                (t.start_parameter(), t.end_parameter()),
+            )
+        }
+    } )* };
+}
+trimmed2d_sampled!(Ellipse2D, Parabola2D, Hyperbola2D, BSplineCurve2D, BezierCurve2D);
 
 impl From<&TrimmedCurve2D<Curve2D>> for Geom {
     fn from(t: &TrimmedCurve2D<Curve2D>) -> Geom {
@@ -331,6 +370,25 @@ fn bspline_surface(s: &BSplineSurface) -> Geom {
     .window(Some([u0, u1]), Some([v0, v1]))
 }
 
+impl From<&ExtrusionSurface> for Geom {
+    fn from(s: &ExtrusionSurface) -> Geom {
+        Geom::extrusion(Geom::from(s.profile()), v3(s.direction()))
+    }
+}
+
+impl From<&RevolutionSurface> for Geom {
+    fn from(s: &RevolutionSurface) -> Geom {
+        let axis = s.axis();
+        Geom::revolution(Geom::from(s.profile()), p3(axis.origin()), v3(axis.direction()))
+    }
+}
+
+impl From<&BezierSurface> for Geom {
+    fn from(s: &BezierSurface) -> Geom {
+        bspline_surface(&s.to_bspline())
+    }
+}
+
 impl From<&Surface> for Geom {
     fn from(s: &Surface) -> Geom {
         match s {
@@ -339,7 +397,10 @@ impl From<&Surface> for Geom {
             Surface::Cone(s) => s.into(),
             Surface::Sphere(s) => s.into(),
             Surface::Torus(s) => s.into(),
+            Surface::Extrusion(s) => s.into(),
+            Surface::Revolution(s) => s.into(),
             Surface::BSpline(s) => s.into(),
+            Surface::Bezier(s) => s.into(),
             other => grid(|u, v| p3(other.point_at(u, v)), other.u_bounds(), other.v_bounds()),
         }
     }
@@ -474,6 +535,29 @@ mod tests {
             let (uv, xyz) = (eval_curve(&g, t), circle.point_at(t));
             close(plane.point_at(uv[0], uv[1]), p3(xyz));
         }
+    }
+
+    #[test]
+    fn swept_surfaces_and_2d_conics_convert() {
+        let extrusion =
+            ExtrusionSurface::new(Line::new(p(0.0, 0.0, 0.0), v(1.0, 0.0, 0.0)).unwrap().into(), v(0.0, 0.0, 2.0))
+                .unwrap();
+        let Geom::Extrusion { profile, direction, .. } = Geom::from(&extrusion) else { panic!() };
+        assert_eq!(direction, [0.0, 0.0, 1.0]);
+        assert!(matches!(*profile, Geom::Line { .. }));
+
+        let axis = Axis::new(Point::ORIGIN, v(0.0, 0.0, 1.0)).unwrap();
+        let revolution =
+            RevolutionSurface::new(Line::new(p(1.0, 0.0, 0.0), v(0.0, 0.0, 1.0)).unwrap().into(), axis).unwrap();
+        let Geom::Revolution { origin, direction, .. } = Geom::from(&revolution) else { panic!() };
+        assert_eq!((origin, direction), ([0.0; 3], [0.0, 0.0, 1.0]));
+
+        let ellipse = Ellipse2D::from_frame(geomcore::Frame2D::WORLD, 3.0, 2.0).unwrap();
+        assert_eq!(Geom::from(&ellipse).kind(), "polyline");
+        assert_eq!(Geom::from(&Curve2D::from(ellipse)).kind(), "polyline");
+        let trimmed =
+            TrimmedCurve2D::new(Ellipse2D::from_frame(geomcore::Frame2D::WORLD, 3.0, 2.0).unwrap(), 0.2, 0.8).unwrap();
+        assert_eq!(Geom::from(&trimmed).kind(), "polyline");
     }
 
     #[test]

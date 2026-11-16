@@ -706,6 +706,7 @@
     }
   ],
   "run": "fixture",
+  "steps": [],
   "title": "Every kind",
   "version": 2,
   "view": "3d"

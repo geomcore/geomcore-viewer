@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Added
+
+- The Rust client has lesson steps (`view.step(name)`), batches
+  (`view.batch(|v| …)`), scalar-coloured point clouds
+  (`Geom::points_colored`) and extrusion/revolution/Bezier/2D-conic
+  conversions from geomcore (#42).
+
 ### Changed
 
 - The Rust client's `geomcore` feature now builds against geomcore 0.48 and

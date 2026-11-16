@@ -22,6 +22,6 @@ mod viewer;
 #[cfg(feature = "geomcore")]
 mod convert;
 
-pub use geom::{Frame, Geom, NoteLevel, Vec3, Window};
+pub use geom::{Frame, Geom, NoteLevel, Vec3, Window, COLORMAPS};
 pub use object::{indexed, Object, Opts, Style, EXTRAS, PALETTE};
-pub use viewer::{Builder, Error, Handle, ViewMode, Viewer, DEFAULT_URL, URL_ENV};
+pub use viewer::{Builder, Error, Handle, Step, ViewMode, Viewer, DEFAULT_URL, URL_ENV};
