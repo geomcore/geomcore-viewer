@@ -141,7 +141,8 @@ class Viewer:
                                       resolution=resolution)
             if len(object_parts) == 1:
                 # Poles, knots, combs and normals come from the exact object, once its window is known.
-                object_parts[0]["exact_object"] = obj
+                # A list already attached its own exact object per leaf (a single-item list included).
+                object_parts[0].setdefault("exact_object", obj)
             parts += object_parts
         return self._commit(parts, label, group, options, u, v)
 

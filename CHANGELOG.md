@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- Extras (`poles`, `knots`, `comb`, `normals`) on a list of objects are computed
+  for every leaf instead of being dropped (#40).
+
 ## 0.4.1 - 2026-11-16
 
 Follows geomcore 0.44–0.47's API renames (`point_at`, `focal_distance`,

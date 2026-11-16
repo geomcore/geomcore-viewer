@@ -1361,7 +1361,12 @@ def to_objects(obj, label: str | None = None, *, u=None, v=None, existing=(), op
         leaves = _leaves(obj)
         if not leaves:
             raise TypeError(f"no geometry found in {type(obj).__name__} of length {len(obj)}")
-        return _labelled(leaves, label, u, v, None, resolution)
+        parts = _labelled(leaves, label, u, v, None, resolution)
+        for part, (leaf, _params) in zip(parts, leaves):
+            # Extras are computed from each leaf, not from the list: a list of curves keeps its
+            # poles, knots and combs just like a single curve.
+            part["exact_object"] = leaf
+        return parts
     raise TypeError(
         f"cannot show {type(obj).__name__}: expected a geomcore curve, surface or point, "
         "an intersection result (tag, payload), or a list of those"
