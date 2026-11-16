@@ -2,18 +2,18 @@
 //!
 //! Analytic curves and surfaces keep their exact definition: the frame and radii
 //! come from geomcore's getters, so the viewer evaluates the same parametrization
-//! (checked against `eval_point` in the tests). `TrimmedCurve3D`/`TrimmedCurve2D`
+//! (checked against `eval_point` in the tests). `TrimmedCurve`/`TrimmedCurve2D`
 //! keep their basis with a parameter range, and B-splines go exact (degree,
 //! poles, weights, knots, multiplicities, periodicity). Only a geometry the
-//! protocol has no wire type for is sampled: a future `Curve3D`/`Surface`
+//! protocol has no wire type for is sampled: a future `Curve`/`Surface`
 //! variant as a 256-segment polyline / 48 × 48 mesh over its parameter bounds.
 
-use geomcore::curves::{ParametricCurve2D, ParametricCurve3D};
-use geomcore::surfaces::ParametricSurface;
+use geomcore::prelude::*;
+
 use geomcore::{
-    BSplineCurve3D, BSplineSurface, BoundingBox3D, Circle2D, Circle3D, Cone, Curve2D, Curve3D, Cylinder,
-    ElementaryCurve, ElementarySurface, Ellipse3D, Frame3D, Hyperbola3D, Line2D, Line3D, Parabola3D, Plane, Point2D,
-    Point3D, Sphere, Surface, Torus, TrimmedCurve2D, TrimmedCurve3D, Vector3D,
+    BSplineCurve, BSplineSurface, BoundingBox, Circle, Circle2D, Cone, Curve, Curve2D, Cylinder, ElementaryCurve,
+    ElementarySurface, Ellipse, Frame as GcFrame, Hyperbola, Line, Line2D, Parabola, Plane, Point, Point2D, Sphere,
+    Surface, Torus, TrimmedCurve, TrimmedCurve2D, Vector,
 };
 
 use crate::geom::{cross, Frame, Geom, Vec3};
@@ -37,15 +37,15 @@ fn sample(eval: impl Fn(f64) -> Vec3, (t0, t1): (f64, f64)) -> Geom {
     Geom::polyline((0..=BSPLINE_SEGMENTS).map(|i| eval(t0 + (t1 - t0) * i as f64 / BSPLINE_SEGMENTS as f64)).collect())
 }
 
-fn p3(p: Point3D) -> Vec3 {
+fn p3(p: Point) -> Vec3 {
     [p.x, p.y, p.z]
 }
 
-fn v3(v: Vector3D) -> Vec3 {
+fn v3(v: Vector) -> Vec3 {
     [v.x, v.y, v.z]
 }
 
-fn frame(f: Frame3D) -> Frame {
+fn frame(f: GcFrame) -> Frame {
     Frame { o: p3(f.origin()), x: v3(f.x_direction()), y: v3(f.y_direction()), z: v3(f.z_direction()) }
 }
 
@@ -70,8 +70,8 @@ fn grid(eval: impl Fn(f64, f64) -> Vec3, (u0, u1): (f64, f64), (v0, v1): (f64, f
     Geom::mesh(vertices, indices)
 }
 
-impl From<Point3D> for Geom {
-    fn from(p: Point3D) -> Geom {
+impl From<Point> for Geom {
+    fn from(p: Point) -> Geom {
         Geom::point(p3(p))
     }
 }
@@ -82,8 +82,8 @@ impl From<Point2D> for Geom {
     }
 }
 
-impl From<&Line3D> for Geom {
-    fn from(c: &Line3D) -> Geom {
+impl From<&Line> for Geom {
+    fn from(c: &Line) -> Geom {
         Geom::line(p3(c.origin()), v3(c.direction()))
     }
 }
@@ -95,8 +95,8 @@ fn collapsed(size: f64, at: Vec3) -> bool {
     size <= 1e-12 * at.iter().map(|x| x * x).sum::<f64>().sqrt().max(1.0)
 }
 
-impl From<&Circle3D> for Geom {
-    fn from(c: &Circle3D) -> Geom {
+impl From<&Circle> for Geom {
+    fn from(c: &Circle) -> Geom {
         let center = p3(c.center());
         if collapsed(c.radius().abs(), center) {
             return Geom::point(center);
@@ -105,26 +105,26 @@ impl From<&Circle3D> for Geom {
     }
 }
 
-impl From<&Ellipse3D> for Geom {
-    fn from(c: &Ellipse3D) -> Geom {
+impl From<&Ellipse> for Geom {
+    fn from(c: &Ellipse) -> Geom {
         Geom::ellipse(frame(c.frame()), c.major_radius(), c.minor_radius())
     }
 }
 
-impl From<&Parabola3D> for Geom {
-    fn from(c: &Parabola3D) -> Geom {
-        Geom::parabola(frame(c.frame()), c.focal())
+impl From<&Parabola> for Geom {
+    fn from(c: &Parabola) -> Geom {
+        Geom::parabola(frame(c.frame()), c.focal_distance())
     }
 }
 
-impl From<&Hyperbola3D> for Geom {
-    fn from(c: &Hyperbola3D) -> Geom {
+impl From<&Hyperbola> for Geom {
+    fn from(c: &Hyperbola) -> Geom {
         Geom::hyperbola(frame(c.frame()), c.major_radius(), c.minor_radius())
     }
 }
 
-impl From<&BSplineCurve3D> for Geom {
-    fn from(c: &BSplineCurve3D) -> Geom {
+impl From<&BSplineCurve> for Geom {
+    fn from(c: &BSplineCurve) -> Geom {
         let first = p3(c.poles()[0]);
         if c.poles().iter().all(|q| collapsed(q.distance(c.poles()[0]), first)) {
             return Geom::point(first);
@@ -137,7 +137,7 @@ impl From<&BSplineCurve3D> for Geom {
 /// rational), distinct knots with multiplicities, and periodicity. The viewer
 /// evaluates the same parametrization (checked against `eval_point` in the
 /// tests); `range` limits a trimmed piece to `[first, last]`.
-fn bspline_curve(c: &BSplineCurve3D, range: Option<[f64; 2]>) -> Geom {
+fn bspline_curve(c: &BSplineCurve, range: Option<[f64; 2]>) -> Geom {
     Geom::BsplineCurve {
         degree: c.degree(),
         poles: c.poles().iter().map(|p| p3(*p)).collect(),
@@ -149,23 +149,23 @@ fn bspline_curve(c: &BSplineCurve3D, range: Option<[f64; 2]>) -> Geom {
     }
 }
 
-impl From<&Curve3D> for Geom {
-    fn from(c: &Curve3D) -> Geom {
+impl From<&Curve> for Geom {
+    fn from(c: &Curve) -> Geom {
         match c {
-            Curve3D::Line(c) => c.into(),
-            Curve3D::Circle(c) => c.into(),
-            Curve3D::Ellipse(c) => c.into(),
-            Curve3D::Parabola(c) => c.into(),
-            Curve3D::Hyperbola(c) => c.into(),
-            Curve3D::BSpline(c) => c.into(),
-            other => sample(|t| p3(other.eval_point(t)), other.bounds()),
+            Curve::Line(c) => c.into(),
+            Curve::Circle(c) => c.into(),
+            Curve::Ellipse(c) => c.into(),
+            Curve::Parabola(c) => c.into(),
+            Curve::Hyperbola(c) => c.into(),
+            Curve::BSpline(c) => c.into(),
+            other => sample(|t| p3(other.point_at(t)), other.bounds()),
         }
     }
 }
 
 impl From<&ElementaryCurve> for Geom {
     fn from(c: &ElementaryCurve) -> Geom {
-        Geom::from(&Curve3D::from(*c))
+        Geom::from(&Curve::from(*c))
     }
 }
 
@@ -173,32 +173,32 @@ impl From<&ElementaryCurve> for Geom {
 /// parameter `range`; a B-spline piece (or anything else) is sampled over the
 /// trimmed range only.
 macro_rules! trimmed3d_exact {
-    ($($basis:ty),*) => { $( impl From<&TrimmedCurve3D<$basis>> for Geom {
-        fn from(t: &TrimmedCurve3D<$basis>) -> Geom {
-            Geom::from(t.basis()).range(t.first(), t.last())
+    ($($basis:ty),*) => { $( impl From<&TrimmedCurve<$basis>> for Geom {
+        fn from(t: &TrimmedCurve<$basis>) -> Geom {
+            Geom::from(t.basis()).range(t.start_parameter(), t.end_parameter())
         }
     } )* };
 }
-trimmed3d_exact!(Line3D, Circle3D, Ellipse3D, Parabola3D, Hyperbola3D);
+trimmed3d_exact!(Line, Circle, Ellipse, Parabola, Hyperbola);
 
-impl From<&TrimmedCurve3D<BSplineCurve3D>> for Geom {
-    fn from(t: &TrimmedCurve3D<BSplineCurve3D>) -> Geom {
-        bspline_curve(t.basis(), Some([t.first(), t.last()]))
+impl From<&TrimmedCurve<BSplineCurve>> for Geom {
+    fn from(t: &TrimmedCurve<BSplineCurve>) -> Geom {
+        bspline_curve(t.basis(), Some([t.start_parameter(), t.end_parameter()]))
     }
 }
 
-impl From<&TrimmedCurve3D<Curve3D>> for Geom {
-    fn from(t: &TrimmedCurve3D<Curve3D>) -> Geom {
-        if let Curve3D::BSpline(c) = t.basis() {
-            return bspline_curve(c, Some([t.first(), t.last()]));
+impl From<&TrimmedCurve<Curve>> for Geom {
+    fn from(t: &TrimmedCurve<Curve>) -> Geom {
+        if let Curve::BSpline(c) = t.basis() {
+            return bspline_curve(c, Some([t.start_parameter(), t.end_parameter()]));
         }
         match Geom::from(t.basis()) {
             analytic @ (Geom::Line { .. }
             | Geom::Circle { .. }
             | Geom::Ellipse { .. }
             | Geom::Parabola { .. }
-            | Geom::Hyperbola { .. }) => analytic.range(t.first(), t.last()),
-            _ => sample(|u| p3(t.eval_point(u)), (t.first(), t.last())),
+            | Geom::Hyperbola { .. }) => analytic.range(t.start_parameter(), t.end_parameter()),
+            _ => sample(|u| p3(t.point_at(u)), (t.start_parameter(), t.end_parameter())),
         }
     }
 }
@@ -228,7 +228,7 @@ impl From<&Curve2D> for Geom {
             Curve2D::Circle(c) => c.into(),
             other => sample(
                 |t| {
-                    let p = other.eval_point(t);
+                    let p = other.point_at(t);
                     [p.x, p.y, 0.0]
                 },
                 other.bounds(),
@@ -242,26 +242,28 @@ impl From<&Curve2D> for Geom {
 /// over the trimmed range.
 impl From<&TrimmedCurve2D<Line2D>> for Geom {
     fn from(t: &TrimmedCurve2D<Line2D>) -> Geom {
-        Geom::from(t.basis()).range(t.first(), t.last())
+        Geom::from(t.basis()).range(t.start_parameter(), t.end_parameter())
     }
 }
 
 impl From<&TrimmedCurve2D<Circle2D>> for Geom {
     fn from(t: &TrimmedCurve2D<Circle2D>) -> Geom {
-        Geom::from(t.basis()).range(t.first(), t.last())
+        Geom::from(t.basis()).range(t.start_parameter(), t.end_parameter())
     }
 }
 
 impl From<&TrimmedCurve2D<Curve2D>> for Geom {
     fn from(t: &TrimmedCurve2D<Curve2D>) -> Geom {
         match Geom::from(t.basis()) {
-            analytic @ (Geom::Line { .. } | Geom::Circle { .. }) => analytic.range(t.first(), t.last()),
+            analytic @ (Geom::Line { .. } | Geom::Circle { .. }) => {
+                analytic.range(t.start_parameter(), t.end_parameter())
+            }
             _ => sample(
                 |u| {
-                    let p = t.eval_point(u);
+                    let p = t.point_at(u);
                     [p.x, p.y, 0.0]
                 },
-                (t.first(), t.last()),
+                (t.start_parameter(), t.end_parameter()),
             ),
         }
     }
@@ -281,7 +283,7 @@ impl From<&Cylinder> for Geom {
 
 impl From<&Cone> for Geom {
     fn from(s: &Cone) -> Geom {
-        Geom::cone(frame(s.frame()), s.semi_angle(), s.ref_radius())
+        Geom::cone(frame(s.frame()), s.half_angle(), s.reference_radius())
     }
 }
 
@@ -338,7 +340,7 @@ impl From<&Surface> for Geom {
             Surface::Sphere(s) => s.into(),
             Surface::Torus(s) => s.into(),
             Surface::BSpline(s) => s.into(),
-            other => grid(|u, v| p3(other.eval_point(u, v)), other.u_bounds(), other.v_bounds()),
+            other => grid(|u, v| p3(other.point_at(u, v)), other.u_bounds(), other.v_bounds()),
         }
     }
 }
@@ -349,16 +351,16 @@ impl From<&ElementarySurface> for Geom {
     }
 }
 
-impl From<&BoundingBox3D> for Geom {
-    fn from(b: &BoundingBox3D) -> Geom {
-        Geom::bbox(p3(b.min()), p3(b.max()))
+impl From<&BoundingBox> for Geom {
+    fn from(b: &BoundingBox) -> Geom {
+        Geom::bbox(p3(b.min_corner()), p3(b.max_corner()))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use geomcore::{Axis3D, Tolerance, Transform, Vector2D};
+    use geomcore::{Axis, Tolerance, Transform, Vector2D};
 
     const TOL: f64 = 1e-9;
 
@@ -395,7 +397,7 @@ mod tests {
         }
     }
 
-    fn close(want: Point3D, got: Vec3) {
+    fn close(want: Point, got: Vec3) {
         let want = p3(want);
         let err = (0..3).map(|k| (want[k] - got[k]).powi(2)).sum::<f64>().sqrt();
         assert!(err <= TOL * want.iter().map(|x| x * x).sum::<f64>().sqrt().max(1.0), "{want:?} vs {got:?}");
@@ -403,46 +405,46 @@ mod tests {
 
     const TS: [f64; 5] = [-1.3, -0.2, 0.0, 0.7, 2.9];
 
-    fn p(x: f64, y: f64, z: f64) -> Point3D {
-        Point3D::new(x, y, z)
+    fn p(x: f64, y: f64, z: f64) -> Point {
+        Point::new(x, y, z)
     }
 
-    fn v(x: f64, y: f64, z: f64) -> Vector3D {
-        Vector3D::new(x, y, z)
+    fn v(x: f64, y: f64, z: f64) -> Vector {
+        Vector::new(x, y, z)
     }
 
     #[test]
     fn analytic_curves_evaluate_like_geomcore() {
         let n = v(0.3, -0.5, 0.8);
-        let curves: Vec<Curve3D> = vec![
-            Line3D::new(p(1.0, 2.0, 3.0), v(0.2, 0.4, -1.0)).unwrap().into(),
-            Circle3D::new(p(1.0, -2.0, 0.5), n, 2.5).unwrap().into(),
-            Ellipse3D::new(p(-1.0, 0.0, 2.0), n, v(1.0, 1.0, 0.0), 3.0, 1.2).unwrap().into(),
-            Parabola3D::new(p(0.0, 1.0, 0.0), n, v(0.0, 1.0, 1.0), 0.7).unwrap().into(),
-            Hyperbola3D::new(p(2.0, 2.0, 2.0), n, v(1.0, 0.0, 0.0), 1.5, 0.5).unwrap().into(),
+        let curves: Vec<Curve> = vec![
+            Line::new(p(1.0, 2.0, 3.0), v(0.2, 0.4, -1.0)).unwrap().into(),
+            Circle::new(p(1.0, -2.0, 0.5), n, 2.5).unwrap().into(),
+            Ellipse::new(p(-1.0, 0.0, 2.0), n, v(1.0, 1.0, 0.0), 3.0, 1.2).unwrap().into(),
+            Parabola::new(p(0.0, 1.0, 0.0), n, v(0.0, 1.0, 1.0), 0.7).unwrap().into(),
+            Hyperbola::new(p(2.0, 2.0, 2.0), n, v(1.0, 0.0, 0.0), 1.5, 0.5).unwrap().into(),
         ];
         for c in &curves {
             let g = Geom::from(c);
             for t in TS {
-                close(c.eval_point(t), eval_curve(&g, t));
+                close(c.point_at(t), eval_curve(&g, t));
             }
         }
     }
 
     #[test]
     fn a_mirrored_circle_still_evaluates_like_geomcore() {
-        let mirror = Transform::mirror_axis(Axis3D::new(Point3D::ORIGIN, Vector3D::X).unwrap());
-        let c = Circle3D::new(p(1.0, 2.0, 0.0), v(0.0, 0.0, 1.0), 1.0).unwrap().transformed(mirror).unwrap();
+        let mirror = Transform::mirror_axis(Axis::new(Point::ORIGIN, Vector::X).unwrap());
+        let c = Circle::new(p(1.0, 2.0, 0.0), v(0.0, 0.0, 1.0), 1.0).unwrap().transformed(mirror).unwrap();
         let g = Geom::from(&c);
         for t in TS {
-            close(c.eval_point(t), eval_curve(&g, t));
+            close(c.point_at(t), eval_curve(&g, t));
         }
     }
 
     #[test]
     fn analytic_surfaces_evaluate_like_geomcore() {
         let axis = v(0.3, -0.5, 0.8);
-        let turn = Transform::rotation(Axis3D::new(p(1.0, 0.0, 0.0), v(1.0, 1.0, 0.0)).unwrap(), 0.6);
+        let turn = Transform::rotation(Axis::new(p(1.0, 0.0, 0.0), v(1.0, 1.0, 0.0)).unwrap(), 0.6);
         let surfaces: Vec<Surface> = vec![
             Plane::new(p(1.0, 2.0, 3.0), axis).unwrap().into(),
             Cylinder::new(p(0.0, 1.0, 0.0), axis, 2.0).unwrap().into(),
@@ -454,23 +456,23 @@ mod tests {
         for s in &surfaces {
             let g = Geom::from(s);
             for (u, w) in [(0.0, 0.0), (0.7, 0.3), (2.0, -1.1), (5.5, 1.4)] {
-                close(s.eval_point(u, w), eval_surface(&g, u, w));
+                close(s.point_at(u, w), eval_surface(&g, u, w));
             }
         }
     }
 
     #[test]
-    fn pcurves_from_parametrize_on_read_as_u_v() {
-        let cylinder = Cylinder::new(Point3D::ORIGIN, v(0.0, 0.0, 1.0), 2.0).unwrap();
-        let ring = Circle3D::new(p(0.0, 0.0, 3.0), v(0.0, 0.0, 1.0), 2.0).unwrap();
-        let pc = ring.parametrize_on(cylinder, Tolerance::DEFAULT).unwrap();
+    fn pcurves_from_curve_3d_to_uv_read_as_u_v() {
+        let cylinder = Cylinder::new(Point::ORIGIN, v(0.0, 0.0, 1.0), 2.0).unwrap();
+        let ring = Circle::new(p(0.0, 0.0, 3.0), v(0.0, 0.0, 1.0), 2.0).unwrap();
+        let pc = cylinder.curve_3d_to_uv(&Curve::from(ring), Tolerance::DEFAULT).unwrap();
         assert_eq!(Geom::from(&pc), Geom::line([0.0, 3.0, 0.0], [1.0, 0.0, 0.0]));
-        let plane = Plane::new(Point3D::ORIGIN, v(0.0, 0.0, 1.0)).unwrap();
-        let circle = Circle3D::new(p(1.0, 1.0, 0.0), v(0.0, 0.0, 1.0), 1.0).unwrap();
-        let g = Geom::from(&circle.parametrize_on(plane, Tolerance::DEFAULT).unwrap());
+        let plane = Plane::new(Point::ORIGIN, v(0.0, 0.0, 1.0)).unwrap();
+        let circle = Circle::new(p(1.0, 1.0, 0.0), v(0.0, 0.0, 1.0), 1.0).unwrap();
+        let g = Geom::from(&plane.curve_3d_to_uv(&Curve::from(circle), Tolerance::DEFAULT).unwrap());
         for t in TS {
-            let (uv, xyz) = (eval_curve(&g, t), circle.eval_point(t));
-            close(plane.eval_point(uv[0], uv[1]), p3(xyz));
+            let (uv, xyz) = (eval_curve(&g, t), circle.point_at(t));
+            close(plane.point_at(uv[0], uv[1]), p3(xyz));
         }
     }
 
@@ -480,7 +482,7 @@ mod tests {
         let c = Circle2D::from_frame(f, 2.0).unwrap();
         let g = Geom::from(&c);
         for t in TS {
-            let want = c.eval_point(t);
+            let want = c.point_at(t);
             close(p(want.x, want.y, 0.0), eval_curve(&g, t));
         }
     }
@@ -488,7 +490,7 @@ mod tests {
     #[test]
     fn b_splines_keep_their_exact_definition() {
         let poles = vec![p(0.0, 0.0, 0.0), p(1.0, 2.0, 0.0), p(3.0, 2.0, 1.0), p(4.0, 0.0, 0.0)];
-        let c = BSplineCurve3D::new(3, poles, vec![0.0, 1.0], vec![4, 4], false).unwrap();
+        let c = BSplineCurve::new(3, poles, vec![0.0, 1.0], vec![4, 4], false).unwrap();
         let Geom::BsplineCurve { degree, poles, weights, knots, multiplicities, periodic, range } = Geom::from(&c)
         else {
             panic!()
@@ -510,7 +512,7 @@ mod tests {
     fn finite_knot_ranges_are_kept_whole_not_clamped() {
         let poles = vec![p(0.0, 0.0, 0.0), p(1.0, 2.0, 0.0), p(3.0, 2.0, 1.0), p(4.0, 0.0, 0.0)];
         for (k0, k1) in [(0.0, 350.0), (200.0, 300.0)] {
-            let c = BSplineCurve3D::new(3, poles.clone(), vec![k0, k1], vec![4, 4], false).unwrap();
+            let c = BSplineCurve::new(3, poles.clone(), vec![k0, k1], vec![4, 4], false).unwrap();
             let Geom::BsplineCurve { knots, .. } = Geom::from(&c) else { panic!() };
             assert_eq!(knots, vec![k0, k1]);
         }
@@ -518,21 +520,20 @@ mod tests {
 
     #[test]
     fn trimmed_curves_keep_their_basis_and_range() {
-        let seg = TrimmedCurve3D::new(Line3D::new(p(0.0, 0.0, 0.0), v(1.0, 0.0, 0.0)).unwrap(), 1.0, 3.0).unwrap();
+        let seg = TrimmedCurve::new(Line::new(p(0.0, 0.0, 0.0), v(1.0, 0.0, 0.0)).unwrap(), 1.0, 3.0).unwrap();
         assert_eq!(Geom::from(&seg), Geom::line([0.0, 0.0, 0.0], [1.0, 0.0, 0.0]).range(1.0, 3.0));
-        let arc =
-            TrimmedCurve3D::new(Circle3D::new(p(1.0, 2.0, 0.0), v(0.0, 0.0, 1.0), 2.0).unwrap(), 0.0, 1.5).unwrap();
+        let arc = TrimmedCurve::new(Circle::new(p(1.0, 2.0, 0.0), v(0.0, 0.0, 1.0), 2.0).unwrap(), 0.0, 1.5).unwrap();
         let g = Geom::from(&arc);
         for t in TS {
-            close(arc.eval_point(t), eval_curve(&g, t));
+            close(arc.point_at(t), eval_curve(&g, t));
         }
         assert!(matches!(g, Geom::Circle { range: Some(_), .. }));
         let line2 = geomcore::Line2D::new(Point2D::new(0.0, 1.0), Vector2D::new(1.0, 0.0)).unwrap();
         let seg2 = TrimmedCurve2D::new(line2, -1.0, 2.0).unwrap();
         assert_eq!(Geom::from(&seg2), Geom::line([0.0, 1.0, 0.0], [1.0, 0.0, 0.0]).range(-1.0, 2.0));
         let poles = vec![p(0.0, 0.0, 0.0), p(1.0, 2.0, 0.0), p(3.0, 2.0, 1.0), p(4.0, 0.0, 0.0)];
-        let spline = BSplineCurve3D::new(3, poles, vec![0.0, 1.0], vec![4, 4], false).unwrap();
-        let piece = TrimmedCurve3D::new(spline, 0.25, 0.75).unwrap();
+        let spline = BSplineCurve::new(3, poles, vec![0.0, 1.0], vec![4, 4], false).unwrap();
+        let piece = TrimmedCurve::new(spline, 0.25, 0.75).unwrap();
         let Geom::BsplineCurve { knots, range, .. } = Geom::from(&piece) else { panic!() };
         assert_eq!(knots, vec![0.0, 1.0]);
         assert_eq!(range, Some([0.25, 0.75]));
@@ -540,21 +541,21 @@ mod tests {
 
     #[test]
     fn runtime_enums_unwrap_to_their_geometry() {
-        let line = Line3D::new(p(0.0, 0.0, 0.0), v(1.0, 0.0, 0.0)).unwrap();
+        let line = Line::new(p(0.0, 0.0, 0.0), v(1.0, 0.0, 0.0)).unwrap();
         assert_eq!(Geom::from(&ElementaryCurve::Line(line)), Geom::line([0.0, 0.0, 0.0], [1.0, 0.0, 0.0]));
-        assert_eq!(Geom::from(&Curve3D::from(line)), Geom::line([0.0, 0.0, 0.0], [1.0, 0.0, 0.0]));
-        let plane = Plane::new(Point3D::ORIGIN, v(0.0, 0.0, 1.0)).unwrap();
+        assert_eq!(Geom::from(&Curve::from(line)), Geom::line([0.0, 0.0, 0.0], [1.0, 0.0, 0.0]));
+        let plane = Plane::new(Point::ORIGIN, v(0.0, 0.0, 1.0)).unwrap();
         assert_eq!(Geom::from(&ElementarySurface::Plane(plane)), Geom::plane(Frame::WORLD));
         assert_eq!(Geom::from(&Surface::from(plane)), Geom::plane(Frame::WORLD));
     }
 
     #[test]
     fn bounding_boxes_become_boxes() {
-        use geomcore::{Bound3D, BoundingBox3D};
-        let b = BoundingBox3D::new(p(0.0, 0.0, 0.0), p(1.0, 2.0, 3.0));
+        use geomcore::{BoundingBox, HasBoundingBox};
+        let b = BoundingBox::new(p(0.0, 0.0, 0.0), p(1.0, 2.0, 3.0));
         assert_eq!(Geom::from(&b), Geom::bbox([0.0, 0.0, 0.0], [1.0, 2.0, 3.0]));
-        let line = Line3D::new(p(0.0, 0.0, 0.0), v(1.0, 0.0, 0.0)).unwrap();
-        let seg = TrimmedCurve3D::new(line, 1.0, 3.0).unwrap();
+        let line = Line::new(p(0.0, 0.0, 0.0), v(1.0, 0.0, 0.0)).unwrap();
+        let seg = TrimmedCurve::new(line, 1.0, 3.0).unwrap();
         let bb = seg.bounding_box().unwrap();
         assert_eq!(Geom::from(&bb), Geom::bbox([1.0, 0.0, 0.0], [3.0, 0.0, 0.0]));
     }
@@ -568,16 +569,16 @@ mod tests {
     #[test]
     fn degenerate_iso_curves_are_points() {
         use std::f64::consts::FRAC_PI_2;
-        let sphere = Sphere::new(Point3D::ORIGIN, 2.0).unwrap();
+        let sphere = Sphere::new(Point::ORIGIN, 2.0).unwrap();
         let Geom::Point { p: pole } = Geom::from(&sphere.v_iso(FRAC_PI_2).unwrap()) else {
             panic!("a pole is a point")
         };
         close(p(0.0, 0.0, 2.0), pole);
-        let cone = Cone::new(Point3D::ORIGIN, Vector3D::Z, 0.5, 1.0).unwrap();
+        let cone = Cone::new(Point::ORIGIN, Vector::Z, 0.5, 1.0).unwrap();
         assert!(matches!(Geom::from(&cone.v_iso(-1.0 / 0.5f64.sin()).unwrap()), Geom::Point { .. }));
         assert!(matches!(Geom::from(&cone.v_iso(0.0).unwrap()), Geom::Circle { .. }));
         let patch = sphere.to_bspline_patch((0.0, 3.0), (-1.0, FRAC_PI_2)).unwrap();
-        let edge: Curve3D = patch.v_iso(FRAC_PI_2).unwrap().into();
+        let edge: Curve = patch.v_iso(FRAC_PI_2).unwrap().into();
         assert!(matches!(Geom::from(&edge), Geom::Point { .. }));
         assert!(matches!(Geom::from(&patch.v_iso(0.0).unwrap()), Geom::BsplineCurve { .. }));
     }

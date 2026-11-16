@@ -4,18 +4,18 @@
 //!        cargo run --example bspline --features geomcore
 //! Save:  cargo run --example bspline --features geomcore -- --save bspline.json
 
-use geomcore::{BSplineCurve3D, BSplineSurface, Bound3D, Point3D, TrimmedCurve3D, Vector3D};
+use geomcore::{BSplineCurve, BSplineSurface, HasBoundingBox, Point, TrimmedCurve, Vector};
 use geomcore_viewer::{Opts, ViewMode, Viewer};
 
-fn p(x: f64, y: f64, z: f64) -> Point3D {
-    Point3D::new(x, y, z)
+fn p(x: f64, y: f64, z: f64) -> Point {
+    Point::new(x, y, z)
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let save = std::env::args().skip_while(|a| a != "--save").nth(1);
     let mut view = Viewer::builder("Exact B-splines").view(ViewMode::Space).build()?;
 
-    let curve = BSplineCurve3D::new(
+    let curve = BSplineCurve::new(
         3,
         vec![p(0.0, 0.0, 0.0), p(1.0, 2.0, 0.0), p(3.0, 2.0, 1.0), p(4.0, 0.0, 0.0)],
         vec![0.0, 1.0],
@@ -23,7 +23,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         false,
     )?;
     view.add(&curve, Opts::new().label("spline"))?;
-    let piece = TrimmedCurve3D::new(curve, 0.25, 0.75)?;
+    let piece = TrimmedCurve::new(curve, 0.25, 0.75)?;
     view.add(&piece, Opts::new().label("piece"))?;
     view.add(&piece.bounding_box().unwrap(), Opts::new().label("box"))?;
 
@@ -46,7 +46,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?;
 
     // A circle as a periodic rational B-spline, exactly.
-    let ring = geomcore::Circle3D::new(p(0.0, 0.0, 3.0), Vector3D::Z, 2.0)?.to_bspline();
+    let ring = geomcore::Circle::new(p(0.0, 0.0, 3.0), Vector::Z, 2.0)?.to_bspline();
     view.add(&ring, Opts::new().label("ring"))?;
 
     if let Some(path) = save {

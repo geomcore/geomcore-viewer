@@ -256,7 +256,7 @@ impl Viewer {
 
     /// Show a curve of `on`'s (u, v) parameter space: a `Line`, `Circle` or
     /// `Polyline` whose x, y are u, v — with the `geomcore` feature, what
-    /// `parametrize_on` returns. The viewer draws it on the surface in 3D and in
+    /// `curve_3d_to_uv` returns. The viewer draws it on the surface in 3D and in
     /// the (u, v) pane.
     pub fn pcurve(&mut self, curve: impl Into<Geom>, on: &Handle, opts: Opts) -> Result<Handle, Error> {
         match self.objects.iter().find(|o| o.id == on.id) {
