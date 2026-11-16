@@ -36,10 +36,10 @@ view.add(C.intersect(E), label="P")   # → P₁, P₂
 ## Install
 
 ```sh
-pip install geomcore-viewer        # installs geomcore 0.44–0.45
+pip install geomcore-viewer        # installs geomcore 0.44–0.47
 ```
 
-The viewer requires geomcore 0.44 or 0.45, which has the current API
+The viewer requires geomcore 0.44 to 0.47, which has the current API
 (`point_at`, `focal_distance`, `half_angle`).
 
 ## API

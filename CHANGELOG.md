@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-Follows geomcore 0.44–0.45's API renames (`point_at`, `focal_distance`,
+Follows geomcore 0.44–0.47's API renames (`point_at`, `focal_distance`,
 `half_angle`, `reference_radius`, `start_parameter`/`end_parameter`,
 `min_corner`/`max_corner`, curve-surface hits' `u`/`v`) and declares that
 supported range, so pip refuses an incompatible pair. `TrimmedSurface` is
