@@ -1298,7 +1298,7 @@ def test_intersection_draws_operands_hits_method_and_one_group():
                                     hits=[CurveCurveHit(Point3D(1, 0, 0), 0.0, 0.0), CurveCurveHit(Point3D(-1, 0, 0), 1.0, 3.0)])
     parts = to_objects(result, "P")
     keys = by_key(parts)
-    assert set(keys) == {"P·first", "P·second", "P·hit1", "P·hit2", "P·method"}
+    assert set(keys) == {"P·first", "P·second", "P·hit1", "P·hit2", "P·method", "P·reuse"}
     assert {p["group"] for p in parts if "group" in p} == {"P"}
     assert all(p["group"] == "P" for p in parts if p["geom"]["type"] != "note")
     assert keys["P·first"]["style"] == {"opacity": 0.45} and keys["P·second"]["style"] == {"opacity": 0.45}
@@ -1323,6 +1323,15 @@ def test_operand_parts_are_marked_so_the_views_drop_their_labels():
     projection = to_objects(CurveProjection(unit_circle(), Point3D(2, 0, 0), Point3D(1, 0, 0), 1.0, 0.0), "Pr")
     [target] = [p for p in projection if p["key"] == "Pr·target"]
     assert target["meta"] == {"operand": True}
+
+
+def test_a_result_group_explains_what_reusing_an_operand_implies():
+    result = CurveCurveIntersection(x_line(), unit_circle(), hits=[CurveCurveHit(Point3D(1, 0, 0), 0.0, 0.0)])
+    note = by_key(to_objects(result, "P"))["P·reuse"]
+    assert note["group"] == "P" and note["geom"]["type"] == "note"
+    assert "removing one also removes it here" in note["geom"]["text"]
+    assert "adding one later draws it twice" in note["geom"]["text"]
+    assert "P·reuse" not in by_key(to_objects(result, "P", operands=False))
 
 
 def test_operands_false_leaves_the_operands_out():

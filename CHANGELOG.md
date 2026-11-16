@@ -8,6 +8,9 @@
   uses its renamed types (`Point`, `Circle`, `Line`, `Frame`…), `point_at`,
   `half_angle`, `reference_radius`, `focal_distance`, `min_corner` and
   `curve_3d_to_uv` (#44).
+- A result group now says what reusing a scene operand implies: removing that
+  object also removes it from the result, and adding an equal one later draws
+  it twice (#41).
 
 ### Fixed
 
