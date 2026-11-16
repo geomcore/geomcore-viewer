@@ -83,6 +83,7 @@ const shell = new FrameScheduler(() => {
   stepSlider.max = String(Math.max(0, ui.steps.length - 1));
   stepSlider.value = String(ui.stepIndex);
   stepLabel.textContent = ui.steps[ui.stepIndex] ?? "";
+  stepLabel.title = ui.steps[ui.stepIndex] ?? "";
   stepPrevious.disabled = ui.stepIndex <= 0;
   stepNext.disabled = ui.stepIndex >= ui.steps.length - 1;
   view2d.setActive(view === "2d");

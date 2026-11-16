@@ -52,8 +52,14 @@ header .meta:empty { display: none; }
 .seg button:first-child { border-radius: 4px 0 0 4px; }
 .seg button:last-child { border-radius: 0 4px 4px 0; margin-left: -1px; }
 #step-bar { gap: 0.3rem; }
-#step-bar button { border-radius: 4px; }
-#step-bar button:last-child { margin-left: 0; }
+/* A fixed-width name keeps the slider and the view toggle in place while the steps change. */
+#step-bar #step-label {
+  display: inline-block;
+  width: clamp(8rem, 22vw, 20rem);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 #step-slider { width: 100px; accent-color: var(--accent, #3a7cc2); }
 #step-label { min-width: 5.5em; white-space: nowrap; }
 .check { display: flex; gap: 0.3rem; align-items: center; white-space: nowrap; }

@@ -50,6 +50,39 @@ test("lesson steps browse with the slider, buttons and arrow keys", async ({ pag
   await expect(page.locator("#object-list")).toContainText("cone 0");
 });
 
+test("the step buttons and slider stay put when the step name changes length", async ({ page, request }) => {
+  const long = "a much longer step name than the first one";
+  await request.post("/api/objects", {
+    data: {
+      version: 2, title: "lengths", run: null, view: "3d", steps: ["short", long],
+      objects: [
+        { id: "short·P", label: "P", step: "short", geom: { type: "point", p: [0, 0, 0] } },
+        { id: `${long}·P`, label: "P", step: long, geom: { type: "point", p: [1, 0, 0] } },
+      ],
+    },
+  });
+  await page.goto("/");
+  await expect(page.locator("#step-bar")).toBeVisible();
+  await expect(page.locator("#step-label")).toHaveText("short");
+
+  const slider = page.locator("#step-slider");
+  const previous = page.locator("#step-previous");
+  const viewToggle = page.locator("#view-2d");
+  const before = { slider: await slider.boundingBox(), previous: await previous.boundingBox(), view: await viewToggle.boundingBox() };
+
+  await page.locator("#step-next").click();
+  await expect(page.locator("#step-label")).toHaveText(long);
+
+  for (const [now, was] of [
+    [await slider.boundingBox(), before.slider],
+    [await previous.boundingBox(), before.previous],
+    [await viewToggle.boundingBox(), before.view],
+  ] as const) {
+    expect(Math.abs(now!.x - was!.x)).toBeLessThan(0.5);
+    expect(Math.abs(now!.y - was!.y)).toBeLessThan(0.5);
+  }
+});
+
 test("a single-step scene hides the step bar", async ({ page, request }) => {
   await postScene(request, "quadrics_3d");
   await page.goto("/");
