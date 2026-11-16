@@ -852,6 +852,21 @@ def _note(text: str, label: str | None, level: str = "info", kind: str = "note")
     }
 
 
+def _reuse_note(label: str) -> dict:
+    """A result's operands reuse matching objects already in the scene; say what that implies."""
+    return {
+        "label": None,
+        "key": f"{label}·reuse",
+        "group": label,
+        "geom": {
+            "type": "note",
+            "text": "reuses operands already in the scene: removing one also removes it here, "
+                    "and adding one later draws it twice",
+            "level": "info",
+        },
+    }
+
+
 def _is_result(obj) -> bool:
     return isinstance(obj, tuple) and len(obj) == 2 and isinstance(obj[0], str)
 
@@ -1298,6 +1313,8 @@ def _intersection(result, label: str | None, u=None, v=None, existing=(), operan
     for part, piece in curve_parts:
         _clip_result_curve(part, piece, shapes)
     notes = [p for p in status_parts if p["geom"]["type"] == "note"]
+    if operands:
+        notes.append(_reuse_note(label))
     if not result:
         notes.insert(0, _note(EMPTY_NOTES["empty"], label))
     if hasattr(result, "is_coincident") and result.is_coincident():

@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Changed
+
+- A result group now says what reusing a scene operand implies: removing that
+  object also removes it from the result, and adding an equal one later draws
+  it twice (#41).
+
 ### Fixed
 
 - Extras (`poles`, `knots`, `comb`, `normals`) on a list of objects are computed
