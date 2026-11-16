@@ -414,6 +414,14 @@ def test_add_attaches_the_computed_extras_to_the_object():
     assert built["extras"] == {"poles": [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]]}
 
 
+def test_a_list_keeps_an_exact_object_per_leaf_so_extras_are_not_dropped():
+    a, b = x_line(), z_line()
+    parts = to_objects([a, b], "L")
+    assert [p["exact_object"] for p in parts] == [a, b]
+    single = to_objects([a], "S")
+    assert single[0]["exact_object"] is a  # a one-item list does not lose its leaf either
+
+
 def test_normals_cover_the_window_drawn_on_an_unbounded_surface():
     geom = {"type": "plane", "frame": FLAT}
     plane = _with_unit_normal(fake("Plane", geom), geom)
