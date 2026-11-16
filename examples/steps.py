@@ -13,9 +13,7 @@ from __future__ import annotations
 import argparse
 import math
 
-from geomcore import Point, Vector
-from geomcore.curves import Circle
-from geomcore.surfaces import Plane
+from geomcore import Circle, Plane, Point, Vector
 
 import geomcore_viewer as gv
 

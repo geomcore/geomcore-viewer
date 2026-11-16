@@ -44,11 +44,11 @@ class Vector3D:
 def fake(name, geom, **getters):
     """An object named ``name`` that evaluates ``geom`` and exposes ``getters``."""
 
-    def eval_point(self, *args):
+    def point_at(self, *args):
         p = eval_curve(geom, *args) if len(args) == 1 else eval_surface(geom, *args)
         return Point3D(*p)
 
-    attrs = {"eval_point": eval_point}
+    attrs = {"point_at": point_at}
     for key, value in getters.items():
         attrs[key] = (lambda value: lambda self: value)(value)
     return type(name, (), attrs)()
@@ -71,22 +71,22 @@ CASES = [
      {"center": Point3D(*TILTED["o"]), "major_radius": 3.0, "minor_radius": 2.0}),
     ("Hyperbola3D", {"type": "hyperbola", "frame": TILTED, "a": 2.0, "b": 1.0},
      {"center": Point3D(*TILTED["o"]), "major_radius": 2.0, "minor_radius": 1.0}),
-    ("Parabola3D", {"type": "parabola", "frame": TILTED, "f": 0.7}, {"focal": 0.7}),
+    ("Parabola3D", {"type": "parabola", "frame": TILTED, "f": 0.7}, {"focal_distance": 0.7}),
     ("Plane", {"type": "plane", "frame": TILTED}, {}),
     ("Cylinder", {"type": "cylinder", "frame": TILTED, "r": 2.0}, {"radius": 2.0}),
     ("Cone", {"type": "cone", "frame": TILTED, "semi_angle": 0.4, "ref_radius": 2.0},
-     {"semi_angle": 0.4, "ref_radius": 2.0}),
+     {"half_angle": 0.4, "reference_radius": 2.0}),
     ("Cone", {"type": "cone", "frame": TILTED, "semi_angle": 0.4, "ref_radius": 0.0},
-     {"semi_angle": 0.4, "ref_radius": 0.0}),
+     {"half_angle": 0.4, "reference_radius": 0.0}),
     ("Cone", {"type": "cone", "frame": TILTED, "semi_angle": -0.4, "ref_radius": 0.0},
-     {"semi_angle": -0.4, "ref_radius": 0.0}),
+     {"half_angle": -0.4, "reference_radius": 0.0}),
     ("Sphere", {"type": "sphere", "frame": TILTED, "r": 3.0}, {"center": Point3D(*TILTED["o"]), "radius": 3.0}),
     ("Torus", {"type": "torus", "frame": TILTED, "R": 4.0, "r": 1.0}, {"major_radius": 4.0, "minor_radius": 1.0}),
     ("Ellipse2D", {"type": "ellipse", "frame": FLAT, "a": 3.0, "b": 2.0},
      {"center": Point3D(*FLAT["o"]), "major_radius": 3.0, "minor_radius": 2.0}),
     ("Hyperbola2D", {"type": "hyperbola", "frame": FLAT, "a": 2.0, "b": 1.0},
      {"center": Point3D(*FLAT["o"]), "major_radius": 2.0, "minor_radius": 1.0}),
-    ("Parabola2D", {"type": "parabola", "frame": FLAT, "f": 0.7}, {"focal": 0.7}),
+    ("Parabola2D", {"type": "parabola", "frame": FLAT, "f": 0.7}, {"focal_distance": 0.7}),
 ]
 
 
@@ -105,7 +105,7 @@ def test_line_and_point():
     line = type("Line3D", (), {
         "origin": lambda self: Point3D(1, 2, 3),
         "direction": lambda self: Vector3D(0.0, 0.0, 1.0),
-        "eval_point": lambda self, t: Point3D(1, 2, 3 + t),
+        "point_at": lambda self, t: Point3D(1, 2, 3 + t),
     })()
     assert to_objects(line)[0]["geom"] == {"type": "line", "o": [1.0, 2.0, 3.0], "d": [0.0, 0.0, 1.0]}
     assert to_objects(Point3D(1, 2, 3), "A") == [{"label": "A", "geom": {"type": "point", "p": [1.0, 2.0, 3.0]}, "source": "Point3D"}]
@@ -129,7 +129,7 @@ RENAMED_CASES = [
      {"center": Point3D(*TILTED["o"]), "major_radius": 3.0, "minor_radius": 2.0}),
     ("Hyperbola", {"type": "hyperbola", "frame": TILTED, "a": 2.0, "b": 1.0},
      {"center": Point3D(*TILTED["o"]), "major_radius": 2.0, "minor_radius": 1.0}),
-    ("Parabola", {"type": "parabola", "frame": TILTED, "f": 0.7}, {"focal": 0.7}),
+    ("Parabola", {"type": "parabola", "frame": TILTED, "f": 0.7}, {"focal_distance": 0.7}),
     ("BSplineCurve", {"type": "line", "o": [0.0, 0.0, 0.0], "d": [1.0, 0.0, 0.0]}, {"bounds": (0.0, 2.0)}),
 ]
 
@@ -198,7 +198,7 @@ def test_lists():
 
 
 def test_bspline_surface_needs_window_without_getters():
-    surf = type("BSplineSurface", (), {"eval_point": lambda self, u, v: Point3D(u, v, 0.0)})()
+    surf = type("BSplineSurface", (), {"point_at": lambda self, u, v: Point3D(u, v, 0.0)})()
     with pytest.raises(TypeError, match="u=.*v="):
         to_objects(surf)
     [part] = to_objects(surf, u=(0, 1), v=(0, 1))
@@ -207,7 +207,7 @@ def test_bspline_surface_needs_window_without_getters():
 
 def _bspline_surface(u_bounds=(0.0, 2.0), v_bounds=(-1.0, 1.0)):
     return type("BSplineSurface", (), {
-        "eval_point": lambda self, u, v: Point3D(u, v, 0.0),
+        "point_at": lambda self, u, v: Point3D(u, v, 0.0),
         "u_bounds": lambda self: u_bounds,
         "v_bounds": lambda self: v_bounds,
     })()
@@ -243,13 +243,13 @@ def test_bspline_surface_clamps_a_non_finite_bound():
 def profile_surface_fake(name, profile, direction=(0.0, 0.0, 1.0), origin=(0.0, 0.0, 0.0)):
     """An ExtrusionSurface/RevolutionSurface stand-in over a fake profile, evaluating like geomcore."""
 
-    def eval_point(self, u, v):
+    def point_at(self, u, v):
         if name == "ExtrusionSurface":
-            p = as_vec(profile.eval_point(u))
+            p = as_vec(profile.point_at(u))
             return Point3D(*[p[i] + v * direction[i] for i in range(3)])
-        return Point3D(*_rotate_about(as_vec(profile.eval_point(v)), list(origin), list(direction), u))
+        return Point3D(*_rotate_about(as_vec(profile.point_at(v)), list(origin), list(direction), u))
 
-    attrs = {"eval_point": eval_point, "profile": lambda self: profile}
+    attrs = {"point_at": point_at, "profile": lambda self: profile}
     if name == "RevolutionSurface":
         axis = type("Axis", (), {"origin": lambda self: Point3D(*origin),
                                  "direction": lambda self: Vector3D(*direction)})()
@@ -333,7 +333,7 @@ def extras_curve_fake():
     geom = {"type": "line", "o": [0.0, 0.0, 0.0], "d": [1.0, 0.0, 0.0]}
 
     class BSplineCurve:
-        def eval_point(self, t):
+        def point_at(self, t):
             return Point3D(*eval_curve(geom, t))
 
         def bounds(self):
@@ -345,11 +345,11 @@ def extras_curve_fake():
         def knots(self):
             return [0.0, 0.5, 1.0]
 
-        def eval_d1(self, t):
-            return self.eval_point(t), Vector3D(1.0, 0.0, 0.0)
+        def first_derivatives(self, t):
+            return self.point_at(t), Vector3D(1.0, 0.0, 0.0)
 
-        def eval_d2(self, t):
-            return self.eval_point(t), Vector3D(1.0, 0.0, 0.0), Vector3D(0.0, 1.0, 0.0)
+        def second_derivatives(self, t):
+            return self.point_at(t), Vector3D(1.0, 0.0, 0.0), Vector3D(0.0, 1.0, 0.0)
 
         def curvature(self, t):
             return 2.0
@@ -437,7 +437,7 @@ def test_real_geomcore_2d_comb_points_to_the_centre_whichever_way_the_arc_turns(
 
 def test_resolution_controls_the_sampled_fallback():
     curve = type("BSplineCurve3D", (), {
-        "eval_point": lambda self, t: Point3D(t, 2 * t, 0.0),
+        "point_at": lambda self, t: Point3D(t, 2 * t, 0.0),
         "bounds": lambda self: (0.0, 10.0),
     })()
     [default] = to_objects(curve)
@@ -446,7 +446,7 @@ def test_resolution_controls_the_sampled_fallback():
     assert len(coarse["geom"]["points"]) == 16 + 1
     assert coarse["geom"]["points"][0] == pytest.approx([0.0, 0.0, 0.0])
     assert coarse["geom"]["points"][-1] == pytest.approx([10.0, 20.0, 0.0])
-    surf = type("BSplineSurface", (), {"eval_point": lambda self, u, v: Point3D(u, v, 0.0)})()
+    surf = type("BSplineSurface", (), {"point_at": lambda self, u, v: Point3D(u, v, 0.0)})()
     [fine] = to_objects(surf, u=(0, 1), v=(0, 1), resolution=48)
     assert len(fine["geom"]["vertices"]) == (48 + 1) ** 2
     [small] = to_objects(surf, u=(0, 1), v=(0, 1), resolution=8)
@@ -460,7 +460,7 @@ def test_resolution_controls_the_sampled_fallback():
 
 def test_bspline_surface_reads_its_domain_when_the_binding_has_it():
     surf = type("BSplineSurface", (), {
-        "eval_point": lambda self, u, v: Point3D(u, v, 0.0),
+        "point_at": lambda self, u, v: Point3D(u, v, 0.0),
         "u_bounds": lambda self: (0.0, 2.0),
         "v_bounds": lambda self: (1.0, 3.0),
     })()
@@ -476,8 +476,8 @@ def test_trimmed_curves_keep_their_basis_and_range():
     line = fake("Line3D", {"type": "line", "o": [1.0, 2.0, 3.0], "d": [0.0, 0.0, 1.0]},
                 origin=Point3D(1, 2, 3), direction=Vector3D(0.0, 0.0, 1.0))
     seg = type("TrimmedCurve3D", (), {
-        "basis": lambda self: line, "first": lambda self: -1.0, "last": lambda self: 2.0,
-        "eval_point": lambda self, t: line.eval_point(t),
+        "basis": lambda self: line, "start_parameter": lambda self: -1.0, "end_parameter": lambda self: 2.0,
+        "point_at": lambda self, t: line.point_at(t),
     })()
     [part] = to_objects(seg, "S")
     assert part["geom"]["type"] == "line" and part["geom"]["range"] == [-1.0, 2.0]
@@ -485,27 +485,27 @@ def test_trimmed_curves_keep_their_basis_and_range():
     arc_basis = fake("Circle3D", {"type": "circle", "frame": TILTED, "r": 1.5},
                      center=Point3D(*TILTED["o"]), radius=1.5, normal=Vector3D(*TILTED["z"]))
     arc = type("TrimmedCurve3D", (), {
-        "basis": lambda self: arc_basis, "first": (0.0), "last": (1.0),
-        "eval_point": lambda self, t: arc_basis.eval_point(t),
+        "basis": lambda self: arc_basis, "start_parameter": (0.0), "end_parameter": (1.0),
+        "point_at": lambda self, t: arc_basis.point_at(t),
     })()
     [apart] = to_objects(arc, "A")
     assert apart["geom"]["type"] == "circle" and apart["geom"]["range"] == [0.0, 1.0]
     assert_frame(apart["geom"]["frame"], TILTED)
     with pytest.raises(TypeError, match="TrimmedCurve"):
         to_objects(type("TrimmedCurve3D", (), {
-            "basis": lambda self: Point3D(0, 0, 0), "first": lambda self: 0.0, "last": lambda self: 1.0,
-            "eval_point": lambda self, t: Point3D(0, 0, 0),
+            "basis": lambda self: Point3D(0, 0, 0), "start_parameter": lambda self: 0.0, "end_parameter": lambda self: 1.0,
+            "point_at": lambda self, t: Point3D(0, 0, 0),
         })())
 
 
 def test_trimmed_bspline_samples_its_range_only_without_getters():
     basis = type("BSplineCurve3D", (), {
-        "eval_point": lambda self, t: Point3D(t, 2 * t, 0.0),
+        "point_at": lambda self, t: Point3D(t, 2 * t, 0.0),
         "bounds": lambda self: (0.0, 10.0),
     })()
     trimmed = type("TrimmedCurve3D", (), {
-        "basis": lambda self: basis, "first": lambda self: 2.0, "last": lambda self: 4.0,
-        "eval_point": lambda self, t: Point3D(t, 2 * t, 0.0),
+        "basis": lambda self: basis, "start_parameter": lambda self: 2.0, "end_parameter": lambda self: 4.0,
+        "point_at": lambda self, t: Point3D(t, 2 * t, 0.0),
     })()
     [part] = to_objects(trimmed, "B")
     assert part["geom"]["type"] == "polyline"
@@ -515,7 +515,7 @@ def test_trimmed_bspline_samples_its_range_only_without_getters():
 
 def test_native_bspline_curve_keeps_its_definition():
     curve = type("BSplineCurve3D", (), {
-        "eval_point": lambda self, t: Point3D(t, 2 * t, 0.0),
+        "point_at": lambda self, t: Point3D(t, 2 * t, 0.0),
         "degree": lambda self: 1,
         "poles": lambda self: [Point3D(0, 0, 0), Point3D(1, 2, 0)],
         "weights": lambda self: None,
@@ -530,12 +530,12 @@ def test_native_bspline_curve_keeps_its_definition():
     assert geom["poles"] == [[0.0, 0.0, 0.0], [1.0, 2.0, 0.0]]
     assert "weights" not in geom
     for t in (0.0, 0.25, 0.7, 1.0):
-        assert eval_curve(geom, t) == pytest.approx(as_vec(curve.eval_point(t)), abs=1e-9)
+        assert eval_curve(geom, t) == pytest.approx(as_vec(curve.point_at(t)), abs=1e-9)
 
 
 def test_native_bspline_surface_keeps_its_definition():
     surf = type("BSplineSurface", (), {
-        "eval_point": lambda self, u, v: Point3D(u, v, u * v),
+        "point_at": lambda self, u, v: Point3D(u, v, u * v),
         "u_degree": lambda self: 1, "v_degree": lambda self: 1,
         "u_pole_count": lambda self: 2, "v_pole_count": lambda self: 2,
         "poles": lambda self: [[Point3D(0, 0, 0), Point3D(0, 1, 0)], [Point3D(1, 0, 0), Point3D(1, 1, 1)]],
@@ -549,7 +549,7 @@ def test_native_bspline_surface_keeps_its_definition():
     assert geom["type"] == "bspline_surface" and (geom["nu"], geom["nv"]) == (2, 2)
     assert "window" not in geom
     for u, v in ((0.0, 0.0), (0.5, 0.5), (1.0, 1.0)):
-        assert eval_surface(geom, u, v) == pytest.approx(as_vec(surf.eval_point(u, v)), abs=1e-9)
+        assert eval_surface(geom, u, v) == pytest.approx(as_vec(surf.point_at(u, v)), abs=1e-9)
     assert with_window(geom, 5.0) is geom  # the knot domain needs no fill
     assert with_window(geom, 5.0, u=(0, 0.5), v=(0, 1))["window"] == {"u": [0.0, 0.5], "v": [0.0, 1.0]}
 
@@ -567,14 +567,14 @@ def test_trimmed_curves_round_trip_with_real_geomcore():
     [apart] = to_objects(arc, "A")
     assert apart["geom"]["type"] == "circle" and apart["geom"]["range"] == [0.0, 1.5]
     for t in (0.0, 0.7, 1.5):
-        assert eval_curve(apart["geom"], t) == pytest.approx(as_vec(arc.eval_point(t)), abs=1e-9)
+        assert eval_curve(apart["geom"], t) == pytest.approx(as_vec(arc.point_at(t)), abs=1e-9)
     poles = [P(0, 0, 0), P(1, 2, 0), P(3, 2, 1), P(4, 0, 0)]
     piece = TrimmedCurve3D(BSplineCurve3D(3, poles, [0.0, 1.0], [4, 4], False), 0.25, 0.75)
     [bpart] = to_objects(piece, "B")
     assert bpart["geom"]["type"] == "bspline_curve"
     assert bpart["geom"]["range"] == [0.25, 0.75]
     for t in (0.25, 0.5, 0.75):
-        assert eval_curve(bpart["geom"], t) == pytest.approx(as_vec(piece.eval_point(t)), abs=1e-9)
+        assert eval_curve(bpart["geom"], t) == pytest.approx(as_vec(piece.point_at(t)), abs=1e-9)
     line2 = TrimmedCurve2D(Line2D(Point2D(0, 1), Vector2D(1, 0)), -1.0, 2.0)
     assert uv_curve(line2) == {"type": "line", "o": [0.0, 1.0, 0.0], "d": [1.0, 0.0, 0.0],
                                "range": [-1.0, 2.0]}
@@ -592,14 +592,14 @@ def test_native_bspline_round_trip_with_real_geomcore():
     assert geom["knots"] == [0.0, 1.0] and geom["multiplicities"] == [4, 4]
     assert "weights" not in geom
     for t in (0.0, 0.3, 0.7, 1.0):
-        assert eval_curve(geom, t) == pytest.approx(as_vec(curve.eval_point(t)), abs=1e-9)
+        assert eval_curve(geom, t) == pytest.approx(as_vec(curve.point_at(t)), abs=1e-9)
     circ = Circle3D(P(1, 2, 3), V(0, 0, 1), 2.0).to_bspline()
     [rpart] = to_objects(circ, "R")
     rgeom = rpart["geom"]
     assert rgeom["type"] == "bspline_curve" and rgeom["periodic"] is True
     assert len(rgeom["weights"]) == len(rgeom["poles"])
     for t in (0.0, 0.7, 2.5, 2 * math.pi):
-        assert eval_curve(rgeom, t) == pytest.approx(as_vec(circ.eval_point(t)), abs=1e-9)
+        assert eval_curve(rgeom, t) == pytest.approx(as_vec(circ.point_at(t)), abs=1e-9)
     surf = BSplineSurface(1, 1, [[P(0, 0, 0), P(0, 1, 0)], [P(1, 0, 0), P(1, 1, 1)]],
                           [0.0, 1.0], [2, 2], [0.0, 1.0], [2, 2], False, False)
     [spart] = to_objects(surf, "S")
@@ -607,11 +607,12 @@ def test_native_bspline_round_trip_with_real_geomcore():
     assert sgeom["type"] == "bspline_surface" and (sgeom["nu"], sgeom["nv"]) == (2, 2)
     assert "window" not in sgeom
     for u, v in ((0.0, 0.0), (0.4, 0.6), (1.0, 1.0)):
-        assert eval_surface(sgeom, u, v) == pytest.approx(as_vec(surf.eval_point(u, v)), abs=1e-9)
+        assert eval_surface(sgeom, u, v) == pytest.approx(as_vec(surf.point_at(u, v)), abs=1e-9)
 
 
 def test_bounding_boxes_become_boxes():
-    box = type("BoundingBox3D", (), {"min": lambda self: Point3D(0, 0, 0), "max": lambda self: Point3D(1, 2, 3)})()
+    box = type("BoundingBox3D", (), {"min_corner": lambda self: Point3D(0, 0, 0),
+                                     "max_corner": lambda self: Point3D(1, 2, 3)})()
     [part] = to_objects(box, "B")
     assert part["geom"] == {"type": "box", "min": [0.0, 0.0, 0.0], "max": [1.0, 2.0, 3.0]}
     assert scene_extent([part["geom"]]) == pytest.approx(1.5 * math.sqrt(14))
@@ -681,11 +682,8 @@ class _RealGeomcore:
 
 @lru_cache(maxsize=None)
 def real_geomcore():
-    import importlib
-
     geomcore = pytest.importorskip("geomcore")
-    return _RealGeomcore(geomcore, importlib.import_module("geomcore.curves"),
-                         importlib.import_module("geomcore.surfaces"))
+    return _RealGeomcore(geomcore)
 
 
 def test_real_geomcore_types_round_trip():
@@ -706,7 +704,7 @@ def test_real_geomcore_types_round_trip():
     for curve in curves:
         [part] = to_objects(curve)
         for t in (-1.3, 0.0, 1.1, 2.5):
-            assert eval_curve(part["geom"], t) == pytest.approx(as_vec(curve.eval_point(t)), abs=1e-9), type(curve).__name__
+            assert eval_curve(part["geom"], t) == pytest.approx(as_vec(curve.point_at(t)), abs=1e-9), type(curve).__name__
     surfaces = [
         Plane.from_frame(tilted), Cylinder.from_frame(tilted, 2.0), Cone.from_frame(tilted, 0.4, 2.0),
         Cone.from_frame(tilted, 0.4, 0.0),
@@ -715,7 +713,7 @@ def test_real_geomcore_types_round_trip():
     for surface in surfaces:
         [part] = to_objects(surface)
         for u, v in ((0.0, 0.0), (1.1, -0.4), (2.5, 0.9)):
-            assert eval_surface(part["geom"], u, v) == pytest.approx(as_vec(surface.eval_point(u, v)), abs=1e-9), type(surface).__name__
+            assert eval_surface(part["geom"], u, v) == pytest.approx(as_vec(surface.point_at(u, v)), abs=1e-9), type(surface).__name__
     assert Frame3D is not None
 
 
@@ -859,6 +857,30 @@ def test_real_geomcore_trimmed_curves_can_be_added():
     assert part["geom"] == {"type": "line", "o": [0.0, 0.0, 0.0], "d": [1.0, 0.0, 0.0], "range": [1.0, 3.0]}
 
 
+def test_trimmed_surface_becomes_its_basis_with_a_window():
+    sphere = fake("Sphere", {"type": "sphere", "frame": FLAT, "r": 2.0},
+                  center=Point3D(0, 0, 0), radius=2.0)
+    trimmed = type("TrimmedSurface", (), {
+        "basis": lambda self: sphere,
+        "u_range": lambda self: (0.0, 1.0),
+        "v_range": lambda self: (-0.5, 0.5),
+        "point_at": lambda self, u, v: sphere.point_at(u, v),
+    })()
+    [part] = to_objects(trimmed, "T")
+    assert part["geom"]["type"] == "sphere"
+    assert part["geom"]["window"] == {"u": [0.0, 1.0], "v": [-0.5, 0.5]}
+
+
+def test_real_geomcore_trimmed_surface_uses_its_ranges():
+    gc = real_geomcore()
+    if not hasattr(gc, "TrimmedSurface"):
+        pytest.skip("needs geomcore >= 0.45")
+    surface = gc.Sphere(gc.Point3D(0, 0, 0), 2.0).trimmed((0.0, 1.0), (0.2, 0.8))
+    [part] = to_objects(surface, "T")
+    assert part["geom"]["type"] == "sphere"
+    assert part["geom"]["window"] == {"u": [0.0, 1.0], "v": [0.2, 0.8]}
+
+
 def test_real_geomcore_2d_curves_become_pcurves():
     gc = real_geomcore()
     P, V = gc.Point2D, gc.Vector2D
@@ -888,7 +910,7 @@ def test_real_geomcore_bspline_surface_uses_its_own_bounds():
     geom = part["geom"]
     assert geom["type"] == "bspline_surface" and "window" not in geom  # the page draws the knot domain
     for u, v in ((0.0, -1.0), (1.3, 0.2), (3.0, 1.0)):
-        assert eval_surface(geom, u, v) == pytest.approx(as_vec(patch.eval_point(u, v)), abs=1e-9)
+        assert eval_surface(geom, u, v) == pytest.approx(as_vec(patch.point_at(u, v)), abs=1e-9)
     narrowed = with_window(geom, 5.0, u=(0.5, 1.0), v=(-0.5, 0.5))
     assert narrowed["window"] == {"u": [0.5, 1.0], "v": [-0.5, 0.5]}
 
@@ -902,12 +924,12 @@ def test_real_geomcore_2d_conics_are_lifted_exactly():
     assert part["geom"]["type"] == "ellipse"
     assert part["geom"]["frame"]["z"] == pytest.approx([0.0, 0.0, 1.0])
     for t in (0.0, 1.1, 2.5):
-        assert eval_curve(part["geom"], t) == pytest.approx(as_vec(ellipse.eval_point(t)))
+        assert eval_curve(part["geom"], t) == pytest.approx(as_vec(ellipse.point_at(t)))
     for name, obj in (("parabola", gc.Parabola2D.from_frame(gc.Frame2D.world(), 0.7)),
                       ("hyperbola", gc.Hyperbola2D.from_frame(gc.Frame2D.world(), 2.0, 1.0))):
         [part] = to_objects(obj)
         assert part["geom"]["type"] == name
-        assert eval_curve(part["geom"], 0.8) == pytest.approx(as_vec(obj.eval_point(0.8)))
+        assert eval_curve(part["geom"], 0.8) == pytest.approx(as_vec(obj.point_at(0.8)))
 
 
 def test_real_geomcore_bezier_curve_and_surface():
@@ -920,13 +942,13 @@ def test_real_geomcore_bezier_curve_and_surface():
     assert part["geom"]["type"] == "bspline_curve"  # exact, through to_bspline(), on the Bézier's parameter
     t0, t1 = curve.bounds()
     for t in (t0, 0.3 * t0 + 0.7 * t1, t1):
-        assert eval_curve(part["geom"], t) == pytest.approx(as_vec(curve.eval_point(t)), abs=1e-9)
+        assert eval_curve(part["geom"], t) == pytest.approx(as_vec(curve.point_at(t)), abs=1e-9)
     patch = gc.Cylinder(gc.Point3D(0, 0, 0), gc.Vector3D(0, 0, 1), 1.0).to_bspline_patch((0.0, 1.0), (0.0, 1.0))
     surface = gc.BezierSurface.from_bspline(patch)
     [part] = to_objects(surface)
     assert part["geom"]["type"] == "bspline_surface"
     for u, v in ((0.0, 0.0), (0.4, 0.7), (1.0, 1.0)):
-        assert eval_surface(part["geom"], u, v) == pytest.approx(as_vec(surface.eval_point(u, v)), abs=1e-9)
+        assert eval_surface(part["geom"], u, v) == pytest.approx(as_vec(surface.point_at(u, v)), abs=1e-9)
 
 
 def test_real_geomcore_extrusion_and_revolution_follow_the_kernel():
@@ -944,7 +966,7 @@ def test_real_geomcore_extrusion_and_revolution_follow_the_kernel():
         geom = part["geom"]
         assert geom["type"] == kind and geom["window"] == window
         for u, v in ((0.3, 1.7), (2.0, -0.4)):
-            assert eval_surface(geom, u, v) == pytest.approx(as_vec(obj.eval_point(u, v)))
+            assert eval_surface(geom, u, v) == pytest.approx(as_vec(obj.point_at(u, v)))
 
 
 def test_real_geomcore_teaching_extras():
@@ -957,7 +979,7 @@ def test_real_geomcore_teaching_extras():
     knots = [t for t in curve.knots() if t0 - 1e-12 <= t <= t1 + 1e-12]
     assert len(data["knots"]) == len(knots)
     for got, t in zip(data["knots"], knots):
-        assert got == pytest.approx(as_vec(curve.eval_point(t)))
+        assert got == pytest.approx(as_vec(curve.point_at(t)))
     teeth = data["comb"]["teeth"]
     assert len(teeth) > 70 and any(math.dist(a, b) > 0.1 for a, b in teeth)
 
@@ -988,7 +1010,7 @@ def test_real_geomcore_freeform_profiles_keep_the_kernel_parameter():
             geom = part["geom"]
             assert geom["profile"]["type"] == "bspline_curve" and geom["window"] == window
             for u, v in ((0.2, 0.3), (0.7, 0.9)):
-                assert eval_surface(geom, u, v) == pytest.approx(as_vec(obj.eval_point(u, v)), abs=1e-9)
+                assert eval_surface(geom, u, v) == pytest.approx(as_vec(obj.point_at(u, v)), abs=1e-9)
 
 
 def test_unbounded_profiles_are_windowed_within_the_extent():
@@ -1161,6 +1183,17 @@ class CurveCurveOverlap:
         self.first_range, self.second_range, self.same_direction = first_range, second_range, True
 
 
+class CurveSurfaceOverlap:
+    def __init__(self, curve_range):
+        self.curve_range = curve_range
+
+
+class CurveSurfaceHit:
+    def __init__(self, point, curve_parameter, u, v, multiplicity=1):
+        self.point, self.curve_parameter, self.u, self.v = point, curve_parameter, u, v
+        self.multiplicity = multiplicity
+
+
 class IntersectionCurve:
     def __init__(self, curve, tangent=False):
         self.curve, self.tangent = curve, tangent
@@ -1182,6 +1215,10 @@ class _Intersection:
 
 
 class CurveCurveIntersection(_Intersection):
+    pass
+
+
+class CurveSurfaceIntersection(_Intersection):
     pass
 
 
@@ -1324,6 +1361,21 @@ def test_overlap_is_the_operand_sampled_over_its_range():
     assert xs[0] == pytest.approx(1.0) and xs[-1] == pytest.approx(3.0)
 
 
+def test_curve_surface_overlap_uses_the_curves_range():
+    result = CurveSurfaceIntersection(x_line(), xy_plane(), overlaps=[CurveSurfaceOverlap((1.0, 3.0))])
+    overlap = by_key(to_objects(result, "O"))["O·overlap1"]
+    xs = [p[0] for p in overlap["geom"]["points"]]
+    assert overlap["geom"]["type"] == "polyline"
+    assert xs[0] == pytest.approx(1.0) and xs[-1] == pytest.approx(3.0)
+
+
+def test_curve_surface_hit_params_come_from_u_and_v():
+    hit = CurveSurfaceHit(Point3D(1, 0, 0), 0.25, 0.4, 0.6)
+    result = CurveSurfaceIntersection(x_line(), xy_plane(), hits=[hit])
+    assert by_key(to_objects(result, "S"))["S·hit1"]["meta"] == {
+        "tag": "hit", "params": [0.25, [0.4, 0.6]]}
+
+
 def test_unbounded_overlap_falls_back_to_the_bounded_operand_then_the_whole_operand():
     inf = float("inf")
     second_bounded = CurveCurveIntersection(x_line(), x_line(), overlaps=[CurveCurveOverlap((-inf, inf), (2.0, 4.0))])
@@ -1441,8 +1493,8 @@ def test_trimmed_operand_travels_exact_with_its_range():
     basis = fake("Line3D", X_LINE, origin=Point3D(0, 0, 0), direction=Vector3D(1, 0, 0))
     trimmed = type("TrimmedCurve3D", (), {
         "basis": lambda self: basis,
-        "first": lambda self: 1.0,
-        "last": lambda self: 2.0,
+        "start_parameter": lambda self: 1.0,
+        "end_parameter": lambda self: 2.0,
     })()
     result = CurveCurveIntersection(trimmed, unit_circle(), hits=[CurveCurveHit(Point3D(1, 0, 0), 1.0, 0.0)])
     geom = by_key(to_objects(result, "T"))["T·first"]["geom"]
@@ -1474,7 +1526,7 @@ def test_real_geomcore_intersections_and_extrema_display():
     assert by_key(flat)["E·hit1"]["geom"]["p"] == [1.0, 0.0, 0.0]
     empty = to_objects(Plane(P(0, 0, 0), unit_z).intersect(Plane(P(0, 0, 1), unit_z)), "F")
     assert by_key(empty)["F·note"]["geom"]["text"] == "F: ∅"
-    extrema = to_objects(gc.curve_curve_extrema(line, Line3D(P(0, 1, 1), V(0, 1, 0))), "G")
+    extrema = to_objects(line.extrema(Line3D(P(0, 1, 1), V(0, 1, 0))), "G")
     assert by_key(extrema)["G·minimum1"]["label"] == "d = 1"
 
 
@@ -1544,7 +1596,7 @@ def test_live_plane_sphere_window_is_local_whatever_the_scene_holds():
 
 
 def test_live_every_result_family_displays():
-    geomcore = _live()
+    _live()
     gc = real_geomcore()
     P, V, Point2D, Vector2D = gc.Point3D, gc.Vector3D, gc.Point2D, gc.Vector2D
     Line3D, Circle3D, Line2D, Circle2D = gc.Line3D, gc.Circle3D, gc.Line2D, gc.Circle2D
@@ -1558,7 +1610,7 @@ def test_live_every_result_family_displays():
         "surface-surface": Cylinder(P(0, 0, 0), z, 2.0).intersect(Plane(P(0, 0, 0), V(1, 0, 0))),
         "cone-sphere": Cone.from_frame(gc.Frame3D.world(), 0.4, 2.0).intersect(
             Sphere(P(0, 0, 0), 3.0)),
-        "extrema": geomcore.curve_curve_extrema(Line3D(P(0, 0, 0), V(1, 0, 0)), Line3D(P(0, 1, 1), V(0, 1, 0))),
+        "extrema": Line3D(P(0, 0, 0), V(1, 0, 0)).extrema(Line3D(P(0, 1, 1), V(0, 1, 0))),
     }
     for name, result in results.items():
         parts = to_objects(result, "R")

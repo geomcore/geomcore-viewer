@@ -3,15 +3,14 @@
 Run:   python examples/conics_2d.py            (re-run after every edit; the tab updates in place)
 Save:  python examples/conics_2d.py --save frontend/public/sample-scene.json
 Needs geomcore (pip install geomcore, or PYTHONPATH=../geomcore/geomcore-py); the examples use
-the current class names, geomcore 0.39 or later.
+the current class names, geomcore 0.44 or later.
 """
 
 from __future__ import annotations
 
 import argparse
 
-from geomcore import Frame, Point, Vector
-from geomcore.curves import Circle, Ellipse, Hyperbola, Line
+from geomcore import Circle, Ellipse, Frame, Hyperbola, Line, Point, Vector
 
 import geomcore_viewer as gv
 

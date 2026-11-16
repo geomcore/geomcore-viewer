@@ -1,10 +1,10 @@
 """Sampling helpers: turn parametric geometry into viewer-ready payloads.
 
-Everything is duck-typed on ``eval_point``-style callables, so real
+Everything is duck-typed on ``point_at``-style callables, so real
 ``geomcore`` objects plug in directly::
 
-    circle = Circle3D(Point3D.origin(), Vector3D.z(), 2.0)
-    viewer.add_curve3d("circle", sample_curve(circle.eval_point, 0.0, 2 * math.pi))
+    circle = Circle(Point.origin(), Vector.unit_z(), 2.0)
+    viewer.add_curve3d("circle", sample_curve(circle.point_at, 0.0, 2 * math.pi))
 
 with no dependency on ``geomcore`` itself.
 """
