@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.1 - 2026-11-16
 
 Follows geomcore 0.44–0.47's API renames (`point_at`, `focal_distance`,
 `half_angle`, `reference_radius`, `start_parameter`/`end_parameter`,
