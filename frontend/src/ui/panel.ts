@@ -4,6 +4,7 @@ import type { Problem, SceneObject } from "../protocol";
 import type { Store } from "../store";
 import { colorOf } from "./colors";
 import { fmtPoint } from "./format";
+import { displayName } from "./names";
 import type { UiState } from "./state";
 
 export interface ObjectRow {
@@ -42,11 +43,11 @@ export interface PanelModel {
   problems: Problem[];
 }
 
-function detailOf(o: SceneObject, objects: Map<string, SceneObject>): { detail: string; warn: boolean } {
+function detailOf(o: SceneObject, objects: Map<string, SceneObject>, dimensions: 2 | 3): { detail: string; warn: boolean } {
   const g = o.geom;
   if (g.type === "point") {
     const tangent = o.meta?.tangent === true ? "tangent, " : "";
-    return { detail: `${tangent}${fmtPoint(g.p)}`, warn: false };
+    return { detail: `${tangent}${fmtPoint(g.p, dimensions)}`, warn: false };
   }
   if (g.type === "points") return { detail: `${g.positions.length} points`, warn: false };
   if (g.type === "pcurve") {
@@ -60,6 +61,7 @@ function detailOf(o: SceneObject, objects: Map<string, SceneObject>): { detail: 
 /** What the panel shows, from the scene and the UI state (pure, so it is unit-tested). */
 export function panelModel(store: Store, ui: UiState): PanelModel {
   const groups = new Map<string | null, GroupModel>([[null, { name: null, visible: true, collapsed: false, rows: [] }]]);
+  const dimensions = ui.activeView(store.view, store.objects.values()) === "2d" ? 2 : 3;
   for (const o of store.objects.values()) {
     if (!ui.inStep(o)) continue;
     const name = o.group ?? null;
@@ -76,8 +78,8 @@ export function panelModel(store: Store, ui: UiState): PanelModel {
     group.rows.push({
       kind: "object",
       id: o.id,
-      label: o.label ?? o.id,
-      ...detailOf(o, store.objects),
+      label: displayName(o),
+      ...detailOf(o, store.objects, dimensions),
       color: colorOf(o),
       visible: !ui.hiddenIds.has(o.id),
       shown: ui.isVisible(o),
@@ -113,6 +115,7 @@ export function mountPanel(store: Store, ui: UiState, list: HTMLElement): void {
   const objectRow = (row: ObjectRow): HTMLLIElement => {
     const li = el("li", `object${row.selected ? " selected" : ""}${row.shown ? "" : " hidden"}`);
     li.dataset.id = row.id;
+    li.title = row.id;
     const swatch = el("span", "swatch");
     swatch.style.background = row.color;
     li.append(
@@ -164,7 +167,7 @@ export function mountPanel(store: Store, ui: UiState, list: HTMLElement): void {
     if (ev.type !== "meta") frame.request();
   });
   ui.onChange((ev) => {
-    if (ev === "visibility" || ev === "selection" || ev === "collapse" || ev === "step") frame.request();
+    if (ev === "visibility" || ev === "selection" || ev === "collapse" || ev === "step" || ev === "view") frame.request();
   });
   render();
 }

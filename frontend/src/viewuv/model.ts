@@ -7,6 +7,7 @@ import type { Box, Vec2, Vec3 } from "../geom/vec";
 import type { SceneObject } from "../protocol";
 import { colorOf } from "../ui/colors";
 import { fmtNum, fmtPoint } from "../ui/format";
+import { displayName } from "../ui/names";
 import { ticks } from "../view2d/plane";
 
 /** One pcurve as the pane draws it: (u, v) paths wrapped into the window, cut at the seams. */
@@ -114,7 +115,7 @@ export function uvModel(objects: Iterable<SceneObject>, subject: SceneObject, bo
     let paths = pcurveRanges(g, geom, box).map(([a, b]) => sampleAdaptive((t) => uvAt(g.curve, t), a, b, tol, 4096, pcurveSeeds(g.curve, geom, a, b)).pts);
     if (period.u) paths = paths.flatMap((p) => wrapAxis(p, 0, u[0], period.u!));
     if (period.v) paths = paths.flatMap((p) => wrapAxis(p, 1, v[0], period.v!));
-    curves.push({ id: o.id, label: o.label ?? o.id, color: colorOf(o), dashed: Boolean(o.style?.dashed), paths });
+    curves.push({ id: o.id, label: displayName(o), color: colorOf(o), dashed: Boolean(o.style?.dashed), paths });
   }
   return { surface: subject, geom, u, v, period, seams, curves };
 }

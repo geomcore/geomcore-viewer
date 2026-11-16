@@ -8,10 +8,10 @@ export function fmtNum(v: number, decimals = 3): string {
   return trimmed === "-0" ? "0" : trimmed;
 }
 
-/** "(x, y)" for a point in the plane z = 0, else "(x, y, z)". */
-export function fmtPoint(p: Vec3): string {
+/** "(x, y)" in the plane view, "(x, y, z)" in the 3D view, its panel and the (u,v) readout. */
+export function fmtPoint(p: Vec3, dimensions: 2 | 3 = 3): string {
   const xy = `${fmtNum(p[0])}, ${fmtNum(p[1])}`;
-  return Math.abs(p[2]) < 1e-12 ? `(${xy})` : `(${xy}, ${fmtNum(p[2])})`;
+  return dimensions === 2 ? `(${xy})` : `(${xy}, ${fmtNum(p[2])})`;
 }
 
 /** `meta.params` for the tooltip: a number, a tuple "(…)" or "—" for null; null when it is anything else. */

@@ -21,6 +21,7 @@ import type { Box, Vec3 } from "../geom/vec";
 import type { SceneObject } from "../protocol";
 import { colorOf } from "../ui/colors";
 import { fmtPoint } from "../ui/format";
+import { displayName } from "../ui/names";
 import { scalarColors, scalarRgba } from "../ui/colormap";
 import type { TextKind } from "../view2d/render";
 
@@ -138,7 +139,7 @@ export interface Context3D {
   withCurves: boolean;
 }
 
-const labelOf = (o: SceneObject): string => o.label ?? o.id;
+const labelOf = displayName;
 /** " tangent" for a tangent hit or contact point, whose id then stays next to its coordinates. */
 const tangent = (o: SceneObject): string => (o.meta?.tangent === true ? " tangent" : "");
 /** Result operands keep their label for hover but do not draw one in the view. */
