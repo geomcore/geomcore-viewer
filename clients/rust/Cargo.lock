@@ -10,7 +10,7 @@ checksum = "621975f070bafc8adbaaf1dcd00f8462af74c727b5d42d2927a65e03efe986ab"
 
 [[package]]
 name = "geomcore-viewer"
-version = "0.4.1"
+version = "0.5.0"
 dependencies = [
  "geomcore",
  "serde_json",
