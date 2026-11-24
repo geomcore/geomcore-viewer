@@ -5,7 +5,7 @@
 | Start a scene | `Viewer(title, view="2d")` | `Viewer::builder(title).view(ViewMode::Plane).build()?` |
 | Add an object | `view.add(obj, label="A")` | `view.add(obj, Opts::new().label("A"))?` |
 | Update or remove it | `handle.update(color="red")`, `handle.remove()` | `view.update(&handle, Style::new().color("red"))`, `view.remove(&handle)` |
-| Send one update | `with view.batch():` | `view.batch(\|v\| { /* add objects */ Ok(()) })?` |
+| Send one update | `with view.batch():` | `view.batch(add_objects)?` |
 | Save for sharing | `view.save("scene.json")` | `view.save("scene.json")?` |
 
 - [Python API and examples](https://github.com/geomcore/geomcore-viewer#api)
