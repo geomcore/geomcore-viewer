@@ -1,14 +1,25 @@
 # API and protocol
 
-| Goal | Python | Rust |
-| --- | --- | --- |
-| Start a scene | `Viewer(title, view="2d")` | `Viewer::builder(title).view(ViewMode::Plane).build()?` |
-| Add an object | `view.add(obj, label="A")` | `view.add(obj, Opts::new().label("A"))?` |
-| Update or remove it | `handle.update(color="red")`, `handle.remove()` | `view.update(&handle, Style::new().color("red"))`, `view.remove(&handle)` |
-| Send one update | `with view.batch():` | `view.batch(add_objects)?` |
-| Save for sharing | `view.save("scene.json")` | `view.save("scene.json")?` |
+## Python
 
-- [Python API and examples](https://github.com/geomcore/geomcore-viewer#api)
-- [Rust client API on docs.rs](https://docs.rs/geomcore-viewer/)
-- [Scene protocol v2](https://github.com/geomcore/geomcore-viewer/blob/main/protocol/SCENE.md)
-- [Repository and local development](https://github.com/geomcore/geomcore-viewer#development)
+- Create a scene with `Viewer(title, view="2d")`.
+- Add an object with `view.add(obj, label="A")`.
+- Change or remove it with `handle.update(color="red")` or `handle.remove()`.
+- Send several changes together with `with view.batch():`.
+- Export the scene with `view.save("scene.json")`.
+
+See the [Python API and examples](https://github.com/geomcore/geomcore-viewer#api) for geometry types and styling options.
+
+## Rust
+
+- Choose a view with `Viewer::builder(title).view(ViewMode::Plane).build()?`.
+- Add an object with `view.add(obj, Opts::new().label("A"))?`.
+- Change or remove it with `view.update(&handle, style)` or `view.remove(&handle)`.
+- Pass a closure to `view.batch(...)?` to send its updates together.
+- Export the scene with `view.save("scene.json")?`.
+
+Find signatures and supported types in the [Rust API reference](https://docs.rs/geomcore-viewer/).
+
+## Scene protocol
+
+The clients and viewer exchange [scene protocol v2](https://github.com/geomcore/geomcore-viewer/blob/main/protocol/SCENE.md) JSON. The specification describes scene metadata, geometry types, styling, and the local server endpoints.
