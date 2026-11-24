@@ -5,6 +5,9 @@ browser. Add curves, surfaces and points from Python or Rust. Python also
 accepts query results. Open saved scenes in the
 [hosted viewer](https://geomcore.github.io/geomcore-viewer/).
 
+Read the [viewer guide](https://geomcore.github.io/geomcore-viewer/docs/)
+for setup, inspection workflows, and scene sharing.
+
 ```python
 # conics.py — run with: python conics.py   (re-run after every edit)
 from geomcore import Circle, Ellipse, Frame, Point, Vector
@@ -223,11 +226,15 @@ Run `scripts/bundle-frontend.sh` to copy the built frontend into the Python
 package. Run `scripts/refresh-fixtures.sh ../geomcore/tests/fixtures` to refresh the
 frontend reference fixtures from a geomcore checkout.
 
+To preview the [guide source](docs/guide/index.md) locally, install
+`docs/requirements.txt` with pip and run `mkdocs serve`.
+
 ## CI and releases
 
 - Pull requests and pushes to `main` run frontend, browser, Python, wheel
   and Rust checks. A green `main` run deploys the build that passed the
-  browser tests to GitHub Pages. To redeploy, run **CI** manually on `main`.
+  browser tests and the viewer guide to GitHub Pages. To redeploy, run
+  **CI** manually on `main`.
 - To publish packages, update the changelog and both package manifests
   (`python/pyproject.toml` and `clients/rust/Cargo.toml`). Regenerate
   `clients/rust/Cargo.lock`, merge, and wait for CI on `main`. Tag that
