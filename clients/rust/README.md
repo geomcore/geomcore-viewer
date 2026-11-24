@@ -5,25 +5,35 @@ It speaks scene protocol v2 ([`protocol/SCENE.md`](https://github.com/geomcore/g
 
 ```toml
 [dependencies]
-geomcore-viewer = { version = "0.4", features = ["geomcore"] }   # the feature needs geomcore 0.48
+geomcore = "0.48"
+geomcore-viewer = { version = "0.6", features = ["geomcore"] }
 ```
+
+Save this as `src/main.rs`.
 
 ```rust
 use geomcore::{Circle, Curve, Cylinder, ParametricSurface, Point, Tolerance, Vector};
 use geomcore_viewer::{Geom, Opts, Viewer};
 
-let mut view = Viewer::new("A circle on a cylinder")?;
-let cylinder = Cylinder::new(Point::ORIGIN, Vector::Z, 2.0)?;
-let ring = Circle::new(Point::new(0.0, 0.0, 1.0), Vector::Z, 2.0)?;
-let s = view.add(Geom::from(&cylinder).window(None, Some([-2.0, 2.0])), Opts::new().label("S"))?;
-view.add(&ring, Opts::new().label("C"))?;
-view.pcurve(&cylinder.curve_3d_to_uv(&Curve::from(ring), Tolerance::DEFAULT)?, &s, Opts::new().label("C in (u, v)"))?;
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let mut view = Viewer::new("A circle on a cylinder")?;
+    let cylinder = Cylinder::new(Point::ORIGIN, Vector::Z, 2.0)?;
+    let ring = Circle::new(Point::new(0.0, 0.0, 1.0), Vector::Z, 2.0)?;
+    let surface = view.add(
+        Geom::from(&cylinder).window(None, Some([-2.0, 2.0])),
+        Opts::new().label("S"),
+    )?;
+    view.add(&ring, Opts::new().label("C"))?;
+    let uv = cylinder.curve_3d_to_uv(&Curve::from(ring), Tolerance::DEFAULT)?;
+    view.pcurve(&uv, &surface, Opts::new().label("C in (u, v)"))?;
+    Ok(())
+}
 ```
 
-The viewer server is Python's, and Rust never starts it. Run
-`python -m geomcore_viewer serve` once (any Python script using the viewer starts it too).
-If no server answers, the client warns once on stderr and keeps the objects;
-`view.save("scene.json")` still works.
+Install the Python package with `pip install geomcore-viewer` and run
+`geomcore-viewer serve` in a separate terminal. Run `cargo run` in the Rust
+project. If the server is unavailable, the client warns once and keeps the
+objects locally so `view.save("scene.json")` still works.
 
 | Call | Does |
 |---|---|

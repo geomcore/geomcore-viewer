@@ -1,0 +1,14 @@
+site_name: geomcore-viewer
+site_description: Learn to inspect geomcore geometry in your browser.
+site_url: https://geomcore.github.io/geomcore-viewer/docs/
+repo_url: https://github.com/geomcore/geomcore-viewer
+docs_dir: docs/guide
+site_dir: build/viewer-docs
+strict: true
+
+nav:
+  - Overview: index.md
+  - Get started: quickstart.md
+  - Inspect geometry: inspection.md
+  - Share scenes: sharing.md
+  - API and protocol: reference.md
