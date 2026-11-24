@@ -46,7 +46,7 @@ let view3d: View3D | null = null;
 let uvpane: UvPane | null = null;
 try {
   view3d = new View3D(store, ui, byId("view3d"), link);
-  uvpane = new UvPane(store, ui, link, byId("view3d"));
+  uvpane = new UvPane(store, ui, link, byId("stage"), byId<HTMLButtonElement>("uv-toggle"));
 } catch (err) {
   console.error("geomcore-viewer: 3D view failed", err);
   viewFailed("3d", `3D view unavailable: ${err instanceof Error ? err.message : String(err)}`);
@@ -71,10 +71,6 @@ const shell = new FrameScheduler(() => {
   renderHeader(store, runs, header, failures);
   const view = usableView(ui.activeView(store.view, store.objects.values()), available);
   stage.dataset.view = view;
-  byId<HTMLButtonElement>("view-2d").disabled = !available["2d"];
-  byId<HTMLButtonElement>("view-3d").disabled = !available["3d"];
-  byId("view-2d").setAttribute("aria-pressed", String(view === "2d"));
-  byId("view-3d").setAttribute("aria-pressed", String(view === "3d"));
   byId("present").setAttribute("aria-pressed", String(ui.presenting));
   document.body.classList.toggle("presenting", ui.presenting);
   autofit.checked = ui.autoFit;
@@ -109,11 +105,11 @@ const present = () => {
   if (ui.presenting) toast("presentation mode · Esc to leave");
 };
 byId("fit").addEventListener("click", fit);
-const chooseView = (view: ActiveView) => {
-  if (available[view]) ui.setView(view);
-};
-byId("view-2d").addEventListener("click", () => chooseView("2d"));
-byId("view-3d").addEventListener("click", () => chooseView("3d"));
+const objects = byId<HTMLButtonElement>("objects");
+const closeObjects = () => objects.setAttribute("aria-expanded", "false");
+objects.addEventListener("click", () => {
+  objects.setAttribute("aria-expanded", String(objects.getAttribute("aria-expanded") !== "true"));
+});
 byId("theme").addEventListener("click", () => ui.toggleTheme());
 byId("present").addEventListener("click", present);
 autofit.addEventListener("change", () => ui.setAutoFit(autofit.checked)); // turning it on refits both views
@@ -126,12 +122,16 @@ mountKeys({
   fit,
   present,
   theme: () => ui.toggleTheme(),
-  view2d: () => chooseView("2d"),
-  view3d: () => chooseView("3d"),
   uvpane: () => ui.toggleUvPane(),
   stepPrevious: () => ui.moveStep(-1),
   stepNext: () => ui.moveStep(1),
-  escape: () => (ui.presenting ? ui.setPresenting(false) : ui.select(null)),
+  escape: () => {
+    if (ui.presenting) ui.setPresenting(false);
+    else if (objects.getAttribute("aria-expanded") === "true" && objects.offsetWidth > 0) {
+      closeObjects();
+      objects.focus();
+    } else ui.select(null);
+  },
 });
 
 // Drag-and-drop a scene .json file anywhere on the page.

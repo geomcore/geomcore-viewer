@@ -13,7 +13,7 @@ import { PALETTES, Palette, mixHex } from "../ui/theme";
 import { placeLabels } from "../view2d/placement";
 import type { HoverLink, UvHover } from "../viewuv/link";
 import { EXTRA_MIX, TextKind } from "../view2d/render";
-import { SNAPS, Snap, cameraScale, fitRadius, initWheelZoom, orthoExtents, pixelSize } from "./camera";
+import { SNAPS, Snap, cameraScale, fitRadius, frontDepth, initWheelZoom, orthoExtents, pixelSize } from "./camera";
 import { Hit3D, Project, describeHit3D, pickProjected, surfaceUv } from "./pick";
 import type { Viewpoint } from "../geom/silhouette";
 import type { TriMesh } from "../geom/tessellate";
@@ -110,6 +110,8 @@ export class View3D {
   private measure = new TextMeasure();
   /** Labels follow the camera: re-placed after a frame in which it (or the scene) moved. */
   private labelsDirty = true;
+  private surfaceBounds: Box | null = null;
+  private zoomFloor = 0;
   private hover: Hit3D | null = null;
   /** The point the (u,v) pane's pointer is at, S(u, v), on its surface. */
   private cursor: Marker | null = null;
@@ -128,6 +130,7 @@ export class View3D {
     this.scene.useRightHandedSystem = true;
     this.camera = new BABYLON.ArcRotateCamera("cam", SNAPS.iso.alpha, SNAPS.iso.beta, 10, BABYLON.Vector3.Zero(), this.scene);
     this.camera.upVector = new BABYLON.Vector3(0, 0, 1);
+    this.camera.allowUpsideDown = false;
     this.camera.lowerBetaLimit = 0; // the top view looks straight down
     this.camera.attachControl(this.canvas, true);
     initWheelZoom(this.camera);
@@ -262,6 +265,7 @@ export class View3D {
     if (!this.active || !this.laidOut()) return;
     const { reset, ids } = this.changes.take();
     const objects = [...this.store.objects.values()];
+    this.updateSurfaceBounds();
     const box = viewBox(objects.map((o) => o.geom));
     const withCurves = hasCurves(objects);
     // Infinite curves, default surface windows and default opacity depend on the whole scene, and
@@ -297,6 +301,7 @@ export class View3D {
     } else if (ev === "labels") {
       this.labelsDirty = true;
     } else if (ev === "visibility" || ev === "step") {
+      this.updateSurfaceBounds();
       if (this.occluding([...this.store.objects.values()]) !== this.occludes) {
         this.rebuild();
       } else {
@@ -339,7 +344,11 @@ export class View3D {
   /** Clip planes and zoom feel follow the scene's size, also when the camera is not moved. */
   private applyScale(): void {
     const b = sceneBounds(this.geoms());
-    if (b) Object.assign(this.camera, cameraScale(fitRadius(b, this.engine.getAspectRatio(this.camera))));
+    if (b) {
+      const scale = cameraScale(fitRadius(b, this.engine.getAspectRatio(this.camera)));
+      this.zoomFloor = scale.lowerRadiusLimit;
+      Object.assign(this.camera, scale);
+    }
   }
 
   private fit(): void {
@@ -347,6 +356,7 @@ export class View3D {
     if (!b) return;
     this.camera.target.copyFrom(v3(b.min).add(v3(b.max)).scale(0.5));
     this.camera.radius = fitRadius(b, this.engine.getAspectRatio(this.camera));
+    this.camera.inertialRadiusOffset = 0;
     this.applyScale();
   }
 
@@ -354,9 +364,32 @@ export class View3D {
     return [...this.store.objects.values()].map((o) => o.geom);
   }
 
+  private updateSurfaceBounds(): void {
+    const surfaces = [...this.store.objects.values()]
+      .filter((o) => this.ui.isVisible(o) && (isSurface(o.geom) || o.geom.type === "mesh"))
+      .map((o) => o.geom);
+    this.surfaceBounds = sceneBounds(surfaces);
+  }
+
+  private keepEyeInFront(): void {
+    const target = this.camera.target;
+    const direction = this.camera.position.subtract(target).normalize();
+    const depth = this.surfaceBounds
+      ? frontDepth(this.surfaceBounds, [target.x, target.y, target.z], [direction.x, direction.y, direction.z])
+      : 0;
+    const limit = Math.max(this.zoomFloor, depth + this.camera.minZ * 2);
+    this.camera.lowerRadiusLimit = limit;
+    if (this.camera.radius < limit) {
+      this.camera.radius = limit;
+      this.camera.inertialRadiusOffset = 0;
+      this.camera.getViewMatrix(true);
+    }
+  }
+
   /** Per frame: orthographic extents follow the zoom, markers keep their pixel size. */
   private beforeRender(): void {
     this.camera.getViewMatrix(); // the camera has moved for this frame, but its position and matrix lag until asked
+    this.keepEyeInFront();
     const aspect = this.engine.getAspectRatio(this.camera);
     if (this.ortho) Object.assign(this.camera, orthoExtents(this.camera.radius, this.camera.fov, aspect));
     const gauge = {

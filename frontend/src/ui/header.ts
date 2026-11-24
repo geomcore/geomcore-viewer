@@ -67,8 +67,12 @@ export function renderHeader(store: Store, runs: RunCounter, els: HeaderElements
   const m = headerModel(store, runs);
   els.title.textContent = m.title;
   document.title = store.title ? `${store.title} · geomcore-viewer` : "geomcore-viewer";
-  const status = statusLine(store.status, failures);
+  const staticScene = store.status.startsWith("static: ");
+  const status = statusLine(staticScene ? "" : store.status, failures);
   els.status.textContent = status.text;
+  els.title.title = m.title;
+  els.status.title = store.status;
+  els.run.hidden = staticScene;
   els.status.dataset.state = status.state;
   els.run.textContent = m.run;
   els.count.textContent = m.count;

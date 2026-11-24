@@ -13,9 +13,6 @@
       <span id="run" class="meta"></span>
       <span id="count" class="meta"></span>
       <div class="spacer"></div>
-      <div class="seg" role="group" aria-label="view">
-        <button id="view-2d" title="Plane view (2)">2D</button><button id="view-3d" title="3D view (3)">3D</button>
-      </div>
       <div class="seg" id="step-bar" role="group" aria-label="step" hidden>
         <input type="range" id="step-slider" min="0" max="0" step="1" aria-label="step" />
         <span id="step-label" class="meta"></span>
@@ -23,23 +20,27 @@
           <button id="step-previous" title="Previous step (←)">‹</button><button id="step-next" title="Next step (→)">›</button>
         </span>
       </div>
-      <label class="check" title="Frame the scene as it changes"><input type="checkbox" id="autofit" checked /> auto-fit</label>
-      <label class="check" title="Show object labels (axis ticks stay)"><input type="checkbox" id="labels" checked /> labels</label>
-      <button id="fit" title="Fit the scene (F)">fit</button>
-      <button id="theme" title="Light or dark (T)">theme</button>
-      <button id="present" title="Presentation mode (P)">present</button>
-      <button id="clear" title="Clear the scene">clear</button>
+      <div class="actions">
+        <button id="objects" aria-controls="panel" aria-expanded="false">Objects</button>
+        <button id="uv-toggle" aria-controls="surface-domain" aria-pressed="false" title="Toggle parameter domain (U)" hidden>UV</button>
+        <label class="check" title="Frame the scene as it changes"><input type="checkbox" id="autofit" checked /> auto-fit</label>
+        <label class="check" title="Show object labels (axis ticks stay)"><input type="checkbox" id="labels" checked /> labels</label>
+        <button id="fit" title="Fit the scene (F)">fit</button>
+        <button id="theme" title="Light or dark (T)">theme</button>
+        <button id="present" title="Presentation mode (P)">present</button>
+        <button id="clear" title="Clear the scene">clear</button>
+      </div>
     </header>
     <main>
-      <section id="stage" data-view="2d">
+      <section id="stage" data-view="2d" aria-label="Geometry">
         <div id="view3d"></div>
         <div id="view2d"></div>
         <div id="toast" role="status" hidden></div>
       </section>
-      <aside id="panel">
+      <aside id="panel" aria-label="Scene objects">
         <ul id="object-list"></ul>
         <p class="hint">
-          <kbd>F</kbd> fit · <kbd>P</kbd> present · <kbd>T</kbd> theme · <kbd>2</kbd> <kbd>3</kbd> view · <kbd>U</kbd> (u,v) pane ·
+          <kbd>F</kbd> fit · <kbd>P</kbd> present · <kbd>T</kbd> theme · <kbd>U</kbd> (u,v) pane ·
           <kbd>Esc</kbd> leave / deselect · hover for details, click a point to copy it
         </p>
         <p class="hint">Live via SSE when served locally · <code>?scene=&lt;url&gt;</code> · or drop a <code>.json</code> scene file anywhere.</p>

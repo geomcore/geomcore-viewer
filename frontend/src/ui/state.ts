@@ -14,7 +14,6 @@ export function usableView(view: ActiveView, available: AvailableViews): ActiveV
 export type UiEvent =
   | "theme"
   | "presenting"
-  | "view"
   | "visibility"
   | "selection"
   | "autofit"
@@ -51,8 +50,7 @@ function toggle(set: Set<string>, key: string, present: boolean): void {
 }
 
 /**
- * Page state that is not scene data: theme, presentation mode, the view the user picked,
- * auto-fit, visibility, collapsed groups and the selection. It outlives run swaps, so
+ * Page state that is not scene data: theme, presentation mode, auto-fit, visibility, collapsed groups and the selection. It outlives run swaps, so
  * hidden groups and ids stay hidden when a re-run brings objects with the same group
  * name or id (spec §5.1).
  */
@@ -68,7 +66,6 @@ export class UiState {
    * show in every step. */
   steps: string[] = [];
   stepIndex = 0;
-  viewOverride: ActiveView | null = null;
   selected: string | null = null;
   readonly hiddenIds = new Set<string>();
   readonly hiddenGroups = new Set<string>();
@@ -158,14 +155,8 @@ export class UiState {
     return o.step === undefined || current === undefined || o.step === current;
   }
 
-  setView(view: ActiveView): void {
-    this.viewOverride = view;
-    this.emit("view");
-  }
-
-  /** The view to show: the user's pick (keys 2/3, header switch), else the scene's, else auto. */
+  /** The scene can choose a view explicitly or let its geometry decide. */
   activeView(sceneView: ViewMode, objects: Iterable<SceneObject>): ActiveView {
-    if (this.viewOverride) return this.viewOverride;
     return sceneView === "auto" ? autoView(objects) : sceneView;
   }
 

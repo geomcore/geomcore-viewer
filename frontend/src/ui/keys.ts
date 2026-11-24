@@ -2,8 +2,6 @@ export type KeyAction =
   | "fit"
   | "present"
   | "theme"
-  | "view2d"
-  | "view3d"
   | "uvpane"
   | "stepPrevious"
   | "stepNext"
@@ -14,18 +12,10 @@ const KEYS: ReadonlyMap<string, KeyAction> = new Map([
   ["f", "fit"],
   ["p", "present"],
   ["t", "theme"],
-  ["2", "view2d"],
-  ["3", "view3d"],
   ["u", "uvpane"],
   ["arrowleft", "stepPrevious"],
   ["arrowright", "stepNext"],
   ["escape", "escape"],
-]);
-
-/** The digit keys by position, for layouts where they type something else unshifted (AZERTY: é and "). */
-const CODES: ReadonlyMap<string, KeyAction> = new Map([
-  ["Digit2", "view2d"],
-  ["Digit3", "view3d"],
 ]);
 
 /** Input types that take typed text; checkboxes, buttons and the like do not. */
@@ -33,8 +23,6 @@ const NON_TEXT_INPUTS: ReadonlySet<string> = new Set(["checkbox", "radio", "butt
 
 interface KeySource {
   key: string;
-  /** The physical key (KeyboardEvent.code). */
-  code?: string;
   ctrlKey: boolean;
   metaKey: boolean;
   altKey: boolean;
@@ -56,7 +44,7 @@ function isTyping(target: EventTarget | null): boolean {
  */
 export function keyAction(ev: KeySource): KeyAction | null {
   if (ev.ctrlKey || ev.metaKey || ev.altKey || isTyping(ev.target)) return null;
-  return KEYS.get(ev.key.toLowerCase()) ?? (ev.code ? CODES.get(ev.code) : undefined) ?? null;
+  return KEYS.get(ev.key.toLowerCase()) ?? null;
 }
 
 /** Route key presses on `target` to the handlers; held-down keys do not repeat the action. */

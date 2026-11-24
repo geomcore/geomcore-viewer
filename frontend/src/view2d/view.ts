@@ -122,7 +122,7 @@ export class View2D {
       if (this.active && this.cam.width > 0 && this.cam.height > 0) this.frameSelected();
       else this.framePending = true;
       this.frame.request(); // the selection is drawn highlighted, and a cleared one no longer is
-    } else if (ev !== "collapse" && ev !== "view") {
+    } else if (ev !== "collapse") {
       this.frame.request(); // theme, presentation mode, visibility
     }
   }

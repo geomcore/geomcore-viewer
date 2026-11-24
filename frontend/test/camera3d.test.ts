@@ -1,7 +1,7 @@
 import { ArcRotateCamera, Camera, Matrix, NullEngine, Scene, Vector3, Viewport } from "@babylonjs/core";
 import { describe, expect, it } from "vitest";
 import type { Vec3 } from "../src/geom/vec";
-import { SNAPS, Snap, WHEEL_PERCENTAGE, cameraScale, fitRadius, initWheelZoom, orthoExtents, pixelSize } from "../src/view3d/camera";
+import { SNAPS, Snap, cameraScale, fitRadius, initWheelZoom, orthoExtents, pixelSize } from "../src/view3d/camera";
 
 const W = 400;
 const H = 300;
@@ -47,12 +47,18 @@ describe("cameraScale", () => {
   });
 
   it("zooms by a fixed gentle fraction of the current radius", () => {
-    expect(WHEEL_PERCENTAGE).toBeGreaterThan(0);
-    expect(WHEEL_PERCENTAGE).toBeLessThan(0.05);
     const { cam } = rig();
     initWheelZoom(cam);
-    const wheel = cam.inputs.attached.mousewheel as { wheelDeltaPercentage?: number };
-    expect(wheel.wheelDeltaPercentage).toBe(WHEEL_PERCENTAGE);
+    const wheel = cam.inputs.attached.mousewheel as unknown as {
+      customComputeDeltaFromMouseWheel(delta: number): number;
+    };
+    const decay = 1 - cam.inertia;
+    const offset = wheel.customComputeDeltaFromMouseWheel(120);
+    expect(offset / decay / cam.radius).toBeCloseTo(0.13, 2);
+    cam.lowerRadiusLimit = 2;
+    cam.inertialRadiusOffset = offset;
+    cam.inertialRadiusOffset += wheel.customComputeDeltaFromMouseWheel(12000);
+    expect(cam.radius - cam.inertialRadiusOffset / decay).toBeCloseTo(2);
   });
 });
 

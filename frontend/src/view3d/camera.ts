@@ -1,15 +1,10 @@
 import type { ArcRotateCamera } from "@babylonjs/core";
-import type { Box } from "../geom/vec";
+import type { Box, Vec3 } from "../geom/vec";
 
 /** Panning feel (Babylon default 1000) at a camera radius of 10. */
 const PAN_FEEL = 10000;
-/**
- * Wheel zoom as a fraction of the current distance: one mouse-wheel notch
- * travels ~12% of the way, at any depth. (Babylon's default world-unit steps
- * scaled with the scene instead: a notch ate most of the radius, slammed the
- * camera into its target, and flipped the view.)
- */
-export const WHEEL_PERCENTAGE = 0.012;
+/** A 120-pixel wheel notch leaves about 87% of the pending orbit distance. */
+const WHEEL_RATE = 0.00115;
 
 /**
  * Clip planes, pan feel and zoom limits for a scene that fits a camera at
@@ -27,10 +22,30 @@ export function cameraScale(radius: number) {
   };
 }
 
-/** The wheel input zooms by percentage of the current radius (see WHEEL_PERCENTAGE). */
+/** Accumulate wheel input in log distance so a large burst cannot reverse the zoom. */
 export function initWheelZoom(camera: ArcRotateCamera): void {
-  const wheel = camera.inputs.attached.mousewheel as { wheelDeltaPercentage?: number } | undefined;
-  if (wheel) wheel.wheelDeltaPercentage = WHEEL_PERCENTAGE;
+  const wheel = camera.inputs.attached.mousewheel as {
+    customComputeDeltaFromMouseWheel?: (delta: number) => number;
+  } | undefined;
+  if (!wheel) return;
+  wheel.customComputeDeltaFromMouseWheel = (delta) => {
+    const decay = 1 - camera.inertia;
+    const pending = camera.radius - camera.inertialRadiusOffset / decay;
+    const low = camera.lowerRadiusLimit ?? Number.EPSILON;
+    const high = camera.upperRadiusLimit ?? Infinity;
+    const next = Math.max(low, Math.min(high, Math.max(low, pending) * Math.exp(-delta * WHEEL_RATE)));
+    return (pending - next) * decay;
+  };
+}
+
+/** Distance from the orbit target to the camera-facing side of the surface bounds. */
+export function frontDepth(box: Box, target: Vec3, towardEye: Vec3): number {
+  let depth = 0;
+  for (let i = 0; i < 3; i++) {
+    const edge = towardEye[i] < 0 ? box.min[i] : box.max[i];
+    depth += (edge - target[i]) * towardEye[i];
+  }
+  return depth;
 }
 
 export type Snap = "top" | "front" | "right" | "iso";
