@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.6.0 - 2026-11-24
+
+### Changed
+
+- The scene determines whether the viewer opens in 2D or 3D. The toolbar
+  switch and its keyboard shortcuts have been removed.
+- The parametric domain appears beside the 3D view on wide screens and below
+  it in narrow embeds. Narrow embeds open the object list on demand.
+
+### Fixed
+
+- Zooming in on a 3D surface stops before the camera crosses it, preventing
+  the view from flipping at close range.
+
 ## 0.5.0 - 2026-11-16
 
 ### Added
