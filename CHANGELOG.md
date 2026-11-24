@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.1 - 2026-11-24
+
+- Add a parabola to the conics demo and show both exact hits for each of the
+  circle–hyperbola and ellipse–hyperbola intersections.
+- Add a dedicated viewer guide covering setup, geometry inspection, and
+  scene sharing.
+- Deploy the browser-tested viewer build and guide to GitHub Pages after CI passes.
+
 ## 0.6.0 - 2026-11-24
 
 ### Changed
