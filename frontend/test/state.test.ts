@@ -50,13 +50,12 @@ describe("UiState view", () => {
     expect(autoView([obj("s", { type: "sphere", frame, r: 1 })])).toBe("3d");
   });
 
-  it("prefers the user's pick, then the scene's view, then auto", () => {
+  it("uses the scene's explicit view or detects its geometry", () => {
     const ui = new UiState(null);
     const planar = [point("a")];
     expect(ui.activeView("auto", planar)).toBe("2d");
     expect(ui.activeView("3d", planar)).toBe("3d");
-    ui.setView("2d");
-    expect(ui.activeView("3d", planar)).toBe("2d");
+    expect(ui.activeView("2d", [point("raised", 1)])).toBe("2d");
   });
 });
 

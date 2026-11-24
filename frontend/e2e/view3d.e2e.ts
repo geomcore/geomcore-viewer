@@ -67,8 +67,7 @@ test("the step buttons and slider stay put when the step name changes length", a
 
   const slider = page.locator("#step-slider");
   const previous = page.locator("#step-previous");
-  const viewToggle = page.locator("#view-2d");
-  const before = { slider: await slider.boundingBox(), previous: await previous.boundingBox(), view: await viewToggle.boundingBox() };
+  const before = { slider: await slider.boundingBox(), previous: await previous.boundingBox() };
 
   await page.locator("#step-next").click();
   await expect(page.locator("#step-label")).toHaveText(long);
@@ -76,7 +75,6 @@ test("the step buttons and slider stay put when the step name changes length", a
   for (const [now, was] of [
     [await slider.boundingBox(), before.slider],
     [await previous.boundingBox(), before.previous],
-    [await viewToggle.boundingBox(), before.view],
   ] as const) {
     expect(Math.abs(now!.x - was!.x)).toBeLessThan(0.5);
     expect(Math.abs(now!.y - was!.y)).toBeLessThan(0.5);
@@ -142,8 +140,29 @@ test("the (u,v) pane shows the pcurves' surface, and U hides it", async ({ page,
   await expect(pane).toBeHidden();
   await page.keyboard.press("u");
   await expect(pane).toBeVisible();
-  await page.keyboard.press("2");
-  await expect(pane).toBeHidden(); // it belongs to the 3D view
+  await page.locator("#uv-toggle").click();
+  await expect(pane).toBeHidden();
+  await expect(page.locator("#uv-toggle")).toHaveAttribute("aria-pressed", "false");
+  await page.locator("#uv-toggle").click();
+  await expect(pane).toBeVisible();
+});
+
+test("a narrow embed stacks the UV plot and keeps the object list off the canvas", async ({ page, request }) => {
+  await postScene(request, "pcurve");
+  await page.setViewportSize({ width: 356, height: 480 });
+  await page.goto("/");
+  await expect(page.locator(".uvpane canvas")).toBeVisible();
+  const geometry = (await page.locator("#canvas3d").boundingBox())!;
+  const domain = (await page.locator(".uvpane").boundingBox())!;
+  expect(geometry.width).toBeCloseTo(356);
+  expect(domain.y).toBeGreaterThanOrEqual(geometry.y + geometry.height - 1);
+  expect(domain.y + domain.height).toBeLessThanOrEqual(481);
+  await expect(page.locator("#panel")).toBeHidden();
+  await page.getByRole("button", { name: "Objects" }).click();
+  await expect(page.locator("#panel")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#panel")).toBeHidden();
+  await expect(page.getByRole("button", { name: "Objects" })).toBeFocused();
 });
 
 test("hover links the (u,v) pane and the 3D view both ways", async ({ page, request }) => {
@@ -245,4 +264,27 @@ test("a hidden torus dashes and fades what it hides, and only that", async ({ pa
   doc.objects[0].extras = { wire: true };
   expect((await request.post("/api/objects", { data: { objects: [doc.objects[0]] } })).ok()).toBe(true);
   await expect.poll(() => pixelsLike(page, "#d35400")).toBeGreaterThan(100);
+});
+
+test("close zoom keeps the eye outside the front of a cylinder", async ({ page, request }) => {
+  await postScene(request, "pcurve");
+  await page.goto("/");
+  await expect(page.locator(".uvpane")).toBeVisible();
+  await page.locator('[data-snap="front"]').click();
+  const before = await camera3d(page);
+  const canvas = (await page.locator("#canvas3d").boundingBox())!;
+  await page.mouse.move(canvas.x + canvas.width / 2, canvas.y + canvas.height / 2);
+  for (let i = 0; i < 24; i++) {
+    await page.mouse.wheel(0, -360);
+    await page.waitForTimeout(80);
+  }
+  await expect.poll(async () => (await camera3d(page)).radius).toBeLessThan(4);
+  await page.waitForTimeout(600);
+  // The eye moves along −y from the target at y = 0. The front wall is y = −2.
+  const close = await camera3d(page);
+  expect(close.radius).toBeGreaterThan(2);
+  expect(close.alpha).toBeCloseTo(before.alpha);
+  expect(close.beta).toBeCloseTo(before.beta);
+  await page.mouse.wheel(0, 360);
+  await expect.poll(async () => (await camera3d(page)).radius).toBeGreaterThan(close.radius);
 });

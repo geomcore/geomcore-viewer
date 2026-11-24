@@ -167,7 +167,7 @@ export function mountPanel(store: Store, ui: UiState, list: HTMLElement): void {
     if (ev.type !== "meta") frame.request();
   });
   ui.onChange((ev) => {
-    if (ev === "visibility" || ev === "selection" || ev === "collapse" || ev === "step" || ev === "view") frame.request();
+    if (ev === "visibility" || ev === "selection" || ev === "collapse" || ev === "step") frame.request();
   });
   render();
 }

@@ -39,8 +39,21 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 kbd { font: 11px/1 ui-monospace, monospace; padding: 0.1rem 0.3rem; border: 1px solid var(--border); border-radius: 3px; }
 
-header#chrome { display: flex; gap: 0.75rem; align-items: center; padding: 0.4rem 1rem; background: var(--surface); border-bottom: 1px solid var(--border); }
-header h1 { font-size: 1rem; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+header#chrome {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.75rem;
+  align-items: center;
+  padding: 0.4rem 0.75rem;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+header .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem; min-width: 0; }
+header .actions button, header .check { min-height: 28px; }
+header [hidden] { display: none; }
+#objects { display: none; }
+#status:empty { display: none; }
+header h1 { min-width: 0; font-size: 1rem; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 header .spacer { flex: 1; }
 header .meta { color: var(--muted); font-size: 0.8rem; white-space: nowrap; }
 header .meta:empty { display: none; }
@@ -52,10 +65,10 @@ header .meta:empty { display: none; }
 .seg button:first-child { border-radius: 4px 0 0 4px; }
 .seg button:last-child { border-radius: 0 4px 4px 0; margin-left: -1px; }
 #step-bar { gap: 0.3rem; }
-/* A fixed-width name keeps the slider and the view toggle in place while the steps change. */
+/* A fixed-width name keeps the controls in place while the steps change. */
 #step-bar #step-label {
   display: inline-block;
-  width: clamp(8rem, 22vw, 20rem);
+  width: clamp(5.5rem, 20vw, 13rem);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -64,20 +77,46 @@ header .meta:empty { display: none; }
 #step-label { min-width: 5.5em; white-space: nowrap; }
 .check { display: flex; gap: 0.3rem; align-items: center; white-space: nowrap; }
 
-main { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 260px; }
-#stage { position: relative; min-width: 0; overflow: hidden; background: var(--bg); }
-#view3d, #view2d { position: absolute; inset: 0; width: 100%; height: 100%; }
+main { position: relative; flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 240px; }
+#stage {
+  position: relative;
+  display: grid;
+  grid-template: minmax(0, 1fr) / minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--bg);
+}
+#stage:has(.uvpane:not([hidden])) { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); }
+#view3d, #view2d { position: relative; grid-area: 1 / 1; min-width: 0; min-height: 0; overflow: hidden; }
 #canvas3d { display: block; width: 100%; height: 100%; outline: none; }
 #stage[data-view="2d"] #view3d, #stage[data-view="3d"] #view2d { display: none; }
 .toolbar3d { position: absolute; top: 0.5rem; right: 0.5rem; display: flex; gap: 0.25rem; }
 .toolbar3d button { padding: 0.15rem 0.45rem; font-size: 0.75rem; opacity: 0.85; }
 body.presenting .toolbar3d { display: none; }
-.uvpane { position: absolute; right: 0.5rem; bottom: 0.5rem; z-index: 1; padding: 0.3rem 0.4rem; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); font-size: 12px; }
+
+.uvpane {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  min-width: 0;
+  min-height: 0;
+  border-left: 1px solid var(--border);
+  background: var(--bg);
+  font-size: 12px;
+}
 .uvpane[hidden] { display: none; }
-.uvpane canvas { display: block; }
-.uvpane .uv-title { font-weight: 600; margin-bottom: 0.2rem; }
-.uvpane .uv-readout { font-variant-numeric: tabular-nums; color: var(--muted); min-height: 1.4em; white-space: nowrap; }
-body.presenting .uvpane { font-size: 18px; }
+.uvpane canvas { display: block; width: 100%; height: 100%; min-width: 0; min-height: 0; }
+.uv-title, .uv-readout { padding: 0.35rem 0.65rem; background: var(--surface); }
+.uv-title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.uv-readout {
+  min-height: 2.15em;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+body.presenting .uvpane { font-size: 15px; }
 #view2d canvas { display: block; }
 
 aside#panel { background: var(--surface); border-left: 1px solid var(--border); padding: 0.5rem 0.75rem; overflow: auto; }
@@ -97,6 +136,29 @@ aside .twisty { border: none; background: none; padding: 0 0.2rem; color: var(--
 aside li.note { color: var(--muted); padding: 0.15rem 0.3rem; }
 aside li.note.warn, aside li.problem { color: var(--warn); }
 .hint { color: var(--muted); font-size: 0.75rem; }
+
+@media (max-width: 1040px) {
+  main { grid-template-columns: minmax(0, 1fr); }
+  #objects { display: block; }
+  aside#panel {
+    display: none;
+    position: absolute;
+    z-index: 2;
+    inset: 0 0 0 auto;
+    width: min(260px, 90%);
+  }
+  body:not(.presenting):has(#objects[aria-expanded="true"]) aside#panel { display: block; }
+}
+
+@media (max-width: 600px) {
+  header#chrome { column-gap: 0.5rem; }
+  header .spacer { display: none; }
+  header .actions { flex-basis: 100%; }
+  #stage:has(.uvpane:not([hidden])) {
+    grid-template: minmax(0, 11fr) minmax(0, 9fr) / minmax(0, 1fr);
+  }
+  .uvpane { border-left: 0; border-top: 1px solid var(--border); }
+}
 
 body.presenting header#chrome, body.presenting aside#panel { display: none; }
 body.presenting main { grid-template-columns: 1fr; }

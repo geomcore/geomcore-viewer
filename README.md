@@ -140,17 +140,17 @@ defaults; `opacity=` applies to the operands.
 
 ## The page
 
-The view shows the plane z = 0 when every object lies in it, else 3D; the
-header's 2D/3D switch (or the scene's `view`) overrides that. A view that cannot
-start (for example 3D without WebGL) has its 2D/3D button disabled, the `2`/`3`
-keys do nothing for it, and the failure stays in the header's status line.
+The scene chooses a single geometry view. Set `view="2d"` or
+`view="3d"` when creating a viewer to choose explicitly. The default
+`view="auto"` uses the plane view for geometry in z = 0 and 3D for
+spatial geometry. If a view fails to start, the header reports the
+failure and the available view opens.
 
 | Key | Does |
 |---|---|
 | `F` | fit the scene (and follow it again as it changes) |
 | `P` | presentation mode: header and panel hidden, lines and labels ×1.5 |
 | `T` | light / dark theme (remembered by the browser) |
-| `2` / `3` | plane view / 3D view |
 | `U` | show / hide the (u,v) pane |
 | `←` / `→` | previous / next lesson step (when the scene has steps) |
 | `Esc` | leave presentation mode, else clear the selection |
@@ -158,7 +158,8 @@ keys do nothing for it, and the failure stays in the header's status line.
 In the plane view, hover an object for its type, label, parameter `t`, and
 `(x, y)`; intersection points also show the parameters of the hit
 (`meta.params`). Click a point to copy its coordinates. Drag to pan and
-scroll to zoom. The panel's checkboxes hide objects and whole groups, and
+scroll to zoom. On a narrow window, use **Objects** to open the panel. Its checkboxes
+hide objects and whole groups, and
 stay off when the script runs again. Click a row to frame that object. The
 header's `labels` checkbox hides object labels in both views; hover still
 names them, and axis ticks stay.
@@ -173,14 +174,16 @@ step; the same label can be reused in different steps.
 
 In 3D, drag to orbit, right-drag to pan and scroll to zoom; the toolbar
 switches between perspective and orthographic and snaps to the top, front,
-right and iso views. Lines keep their pixel width at any distance, and
+right and iso views. Close zoom stops in front of the displayed surface
+bounds to keep the camera from passing through the model. Lines keep their pixel width at any distance, and
 surfaces turn translucent when the scene also holds curves. Hover a curve
 for its parameter `t` and point, a surface for its `(u, v)`.
 
-The (u,v) pane, an inset of the 3D view, shows the selected surface (or the
-surface of the selected pcurve, or of the first pcurve in the scene): its
-window, seams and the pcurves on it. Hovering it puts a marker on the
-surface in 3D; hovering the surface or a pcurve in 3D puts one in the pane.
+The UV pane shows the selected surface's parameter domain, seams and
+curves. It also opens when the scene contains a pcurve. The plot appears
+beside the 3D scene on wide screens and below it on narrow screens.
+Hover either pane to see the corresponding point in the other. Use
+**UV** or `U` to give the geometry the full canvas again.
 
 ## Rust
 

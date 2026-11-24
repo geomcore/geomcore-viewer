@@ -11,15 +11,13 @@ import { gridSpacing, ticks } from "../view2d/plane";
 import { HoverLink } from "./link";
 import { PlotRect, UvModel, fromPane, hoverText, toPane, uvModel, uvSubject, wrapUv } from "./model";
 
-/** The pane's size in CSS pixels (×1.5 in presentation mode) and the plot's margins inside it. */
-const WIDTH = 320;
-const HEIGHT = 220;
-const PAD = { left: 34, right: 10, top: 8, bottom: 20 };
+/** Space for tick labels and axis names around the plot. */
+const PAD = { left: 44, right: 18, top: 12, bottom: 26 };
 const LINE_PX = 2;
 const DASH: [number, number] = [6, 4];
 
 /**
- * The linked (u,v) pane (spec §5.4): an inset over the 3D view showing a surface's (u,v)
+ * The linked (u,v) pane (spec §5.4): a pane alongside the 3D view showing a surface's (u,v)
  * window, its seams and the pcurves on it. Hover in it puts a marker on the surface in 3D;
  * hover on the surface or a pcurve in 3D puts one here.
  */
@@ -38,18 +36,26 @@ export class UvPane {
     private ui: UiState,
     private link: HoverLink,
     host: HTMLElement,
+    private toggle: HTMLButtonElement,
   ) {
     this.root = document.createElement("div");
+    this.root.id = "surface-domain";
     this.root.className = "uvpane";
+    this.root.setAttribute("role", "region");
+    this.root.setAttribute("aria-labelledby", "uv-title");
     this.root.hidden = true;
     this.title = document.createElement("div");
+    this.title.id = "uv-title";
     this.title.className = "uv-title";
     this.canvas = document.createElement("canvas");
+    this.canvas.setAttribute("aria-label", "Surface parameter plot");
     this.readout = document.createElement("div");
     this.readout.className = "uv-readout";
     this.root.append(this.title, this.canvas, this.readout);
     host.appendChild(this.root);
     this.ctx = this.canvas.getContext("2d");
+    toggle.addEventListener("click", () => ui.toggleUvPane());
+    new ResizeObserver(() => this.frame.request()).observe(this.canvas);
     store.onChange(() => this.frame.request());
     ui.onChange(() => this.frame.request());
     link.onChange(() => this.frame.request());
@@ -71,12 +77,17 @@ export class UvPane {
   }
 
   private get scale(): number {
-    return this.ui.presenting ? 1.5 : 1;
+    return this.ui.presenting && this.canvas.clientHeight >= 180 ? 1.25 : 1;
   }
 
   private plot(): PlotRect {
     const k = this.scale;
-    return { left: PAD.left * k, top: PAD.top * k, width: (WIDTH - PAD.left - PAD.right) * k, height: (HEIGHT - PAD.top - PAD.bottom) * k };
+    return {
+      left: PAD.left * k,
+      top: PAD.top * k,
+      width: Math.max(1, this.canvas.clientWidth - (PAD.left + PAD.right) * k),
+      height: Math.max(1, this.canvas.clientHeight - (PAD.top + PAD.bottom) * k),
+    };
   }
 
   private pointer(ev: PointerEvent): void {
@@ -89,7 +100,10 @@ export class UvPane {
   }
 
   private draw(): void {
-    const subject = this.active && this.ui.uvPane ? uvSubject(this.store.objects, this.ui.selected) : null;
+    const available = this.active ? uvSubject(this.store.objects, this.ui.selected) : null;
+    const subject = this.ui.uvPane ? available : null;
+    this.toggle.hidden = !available;
+    this.toggle.setAttribute("aria-pressed", String(Boolean(subject)));
     if (this.link.current?.from === "uv" && (!subject || this.link.current.surface !== subject.id)) this.link.set(null);
     this.root.hidden = !subject;
     if (!subject || !this.ctx) {
@@ -100,12 +114,11 @@ export class UvPane {
     const m = uvModel(objects, subject, viewBox(objects.map((o) => o.geom)), (o) => this.ui.isVisible(o));
     this.model = m;
     const k = this.scale;
-    const [w, h] = [WIDTH * k, HEIGHT * k];
+    const [w, h] = [this.canvas.clientWidth, this.canvas.clientHeight];
+    if (w === 0 || h === 0) return;
     const dpr = window.devicePixelRatio || 1;
     if (this.canvas.width !== Math.round(w * dpr) || this.canvas.height !== Math.round(h * dpr)) {
       [this.canvas.width, this.canvas.height] = [Math.round(w * dpr), Math.round(h * dpr)];
-      this.canvas.style.width = `${w}px`;
-      this.canvas.style.height = `${h}px`;
     }
     const ctx = this.ctx;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -133,7 +146,7 @@ export class UvPane {
       segment([u, m.v[0]], [u, m.v[1]], palette.gridMajor, 1);
       const [x] = at([u, m.v[0]]);
       ctx.textAlign = "center";
-      ctx.fillText(fmtNum(u, 2), x, h - 6 * k);
+      ctx.fillText(fmtNum(u, 2), x, h - 9 * k);
     }
     for (const v of ticks(m.v[0], m.v[1], sv)) {
       segment([m.u[0], v], [m.u[1], v], palette.gridMajor, 1);
@@ -141,6 +154,9 @@ export class UvPane {
       ctx.textAlign = "right";
       ctx.fillText(fmtNum(v, 2), r.left - 4 * k, y + 3 * k);
     }
+    ctx.textAlign = "center";
+    ctx.fillText("u", w - 7 * k, h - 9 * k);
+    ctx.fillText("v", 10 * k, 12 * k);
     ctx.setLineDash([]);
     ctx.strokeStyle = palette.axis;
     ctx.lineWidth = 1;
@@ -177,6 +193,11 @@ export class UvPane {
 
     const label = m.surface.label ?? m.surface.id;
     this.title.textContent = `${label} · ${m.geom.type} (u, v)`;
-    this.readout.textContent = hover && hover.surface === m.surface.id ? hoverText(hover.uv, evalSurface(m.geom, hover.uv[0], hover.uv[1])) : " ";
+    this.title.title = this.title.textContent;
+    const readout = hover && hover.surface === m.surface.id
+      ? hoverText(hover.uv, evalSurface(m.geom, hover.uv[0], hover.uv[1]))
+      : "";
+    this.readout.textContent = readout;
+    this.readout.title = readout;
   }
 }
