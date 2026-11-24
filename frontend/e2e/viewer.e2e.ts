@@ -55,17 +55,21 @@ test("the sample scene renders in the plane view", async ({ page }) => {
   await page.goto("/?scene=sample-scene.json");
   await expect(page.locator("#title")).toHaveText("Conics and their intersections");
   await expect(page.locator("#stage")).toHaveAttribute("data-view", "2d");
-  await expect(page.locator("#count")).toHaveText("12 objects");
-  await expect(page.locator(".labels .label", { hasText: "P₁ (2.994, -0.123)" })).toBeVisible();
+  await expect(page.locator("#count")).toHaveText("17 objects");
+  await expect(page.locator(".labels .label", { hasText: "P₂ (2.994, -0.123)" })).toBeVisible();
   await expect(page.locator(".labels .label.extra", { hasText: "F₁" })).toHaveCount(1);
   await expect.poll(async () => (await strokeSpan(page, "L")).n).toBeGreaterThan(1);
+  await expect.poll(async () => (await strokeSpan(page, "A")).n).toBeGreaterThan(1);
+  for (const id of ["T₁", "T₂", "U₁", "U₂"]) {
+    await expect(page.locator(".labels .label", { hasText: new RegExp(`^${id} `) })).toBeVisible();
+  }
   expect(await ticksUnderLabels(page)).toEqual([]);
 });
 
 test("zooming far out keeps line L spanning the view", async ({ page }) => {
   await page.goto("/?scene=sample-scene.json");
-  await expect(page.locator("#count")).toHaveText("12 objects");
-  await expect(page.locator(".labels .label", { hasText: "P₁ (2.994, -0.123)" })).toBeVisible(); // the sample is drawn
+  await expect(page.locator("#count")).toHaveText("17 objects");
+  await expect(page.locator(".labels .label", { hasText: "P₂ (2.994, -0.123)" })).toBeVisible(); // the sample is drawn
   const box = (await page.locator("#view2d").boundingBox())!;
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   for (let i = 0; i < 8; i++) await page.mouse.wheel(0, 1500);
@@ -134,7 +138,7 @@ test("a selected object stays highlighted in the plane view until Esc", async ({
 
 test("T switches the theme, P presents and Esc leaves", async ({ page }) => {
   await page.goto("/?scene=sample-scene.json");
-  await expect(page.locator("#count")).toHaveText("12 objects");
+  await expect(page.locator("#count")).toHaveText("17 objects");
   await page.keyboard.press("t");
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   await page.keyboard.press("p");
