@@ -1,9 +1,9 @@
 # geomcore-viewer
 
-A live, geometry-aware browser viewer for [geomcore](https://github.com/geomcore/geomcore).
-Write geomcore code, call `view.add(...)`, and the curves, surfaces and
-intersection points appear — exactly, not as hand-sampled polylines — in a
-browser tab that updates as your script, debugger or notebook runs.
+Inspect [geomcore](https://github.com/geomcore/geomcore) geometry in your
+browser. Add curves, surfaces and points from Python or Rust. Python also
+accepts query results. Open saved scenes in the
+[hosted viewer](https://geomcore.github.io/geomcore-viewer/).
 
 ```python
 # conics.py — run with: python conics.py   (re-run after every edit)
@@ -42,12 +42,9 @@ view.add(C.intersect(E), label="P")   # → P₁, P₂
 pip install geomcore-viewer        # installs geomcore 0.44–0.47
 ```
 
-The viewer requires geomcore 0.44 to 0.47, which has the current API:
-`point_at`, `focal_distance`, `half_angle`. The scripts in
-`examples/` build their objects with the same root imports (`from geomcore import
-Point, Circle, Ellipse`), or, from a source checkout,
-`PYTHONPATH=../geomcore/geomcore-py` (add `python` when running from this repo,
-as in the Development section).
+The Python package supports geomcore 0.44 through 0.47. The
+[Rust client](clients/rust/README.md) supports geomcore 0.48 through its
+optional `geomcore` feature.
 
 ## API
 
@@ -153,7 +150,7 @@ failure and the available view opens.
 | `T` | light / dark theme (remembered by the browser) |
 | `U` | show / hide the (u,v) pane |
 | `←` / `→` | previous / next lesson step (when the scene has steps) |
-| `Esc` | leave presentation mode, else clear the selection |
+| `Esc` | close the object list, leave presentation mode, or clear the selection |
 
 In the plane view, hover an object for its type, label, parameter `t`, and
 `(x, y)`; intersection points also show the parameters of the hit
@@ -187,12 +184,14 @@ Hover either pane to see the corresponding point in the other. Use
 
 ## Rust
 
-`cargo add geomcore-viewer --features geomcore` (crates.io; the feature takes
-geomcore 0.36). `clients/rust` is the same client for Rust programs: `Viewer::add`, labels,
-groups, runs and surface windows work as in Python, and with the `geomcore`
-cargo feature geomcore's curves, surfaces, points and `parametrize_on` results
-go straight to `add`. Rust never starts the server: run
-`python -m geomcore_viewer serve` once. See [clients/rust/README.md](clients/rust/README.md).
+```sh
+cargo add geomcore-viewer --features geomcore
+geomcore-viewer serve
+```
+
+Install the Python package to run the local server. The Rust client can also
+save a scene without a server. See the [Rust guide](clients/rust/README.md)
+for a runnable example, geometry conversions and lesson steps.
 
 ## Layout
 
@@ -206,21 +205,37 @@ go straight to `add`. Rust never starts the server: run
 
 ## Development
 
+Use Node.js 22, Python 3.12 (the package also supports 3.9) and stable Rust.
+
 ```sh
-python3 -m venv .venv && .venv/bin/pip install pytest
-PYTHONPATH=python:../geomcore/geomcore-py .venv/bin/python -m pytest python/tests -q
-cd frontend && npm ci && npm test && npm run build && cd ..
-cd frontend && npx playwright install chromium && npm run e2e && cd ..   # browser tests (port 8797)
-scripts/bundle-frontend.sh          # copy the build into the Python package
-scripts/refresh-fixtures.sh         # re-vendor geomcore's golden fixtures
-(cd clients/rust && cargo test --features geomcore)   # Rust client
-scripts/rust-live-check.sh 8797     # Rust examples against a real server
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -e python pytest
+python -m pytest python/tests -q
+
+(cd frontend && npm ci && npm test && npm run build)
+(cd frontend && npx playwright install chromium && npm run e2e)
+(cd clients/rust && cargo test --locked --features geomcore)
+scripts/rust-live-check.sh 8797
 ```
 
-Releasing: bump `version` in `python/pyproject.toml` and `clients/rust/Cargo.toml`, merge, then push a
-`vX.Y.Z` tag. `.github/workflows/release.yml` checks that the tag matches both versions, publishes to
-PyPI and crates.io through trusted publishing (no tokens), and attaches the files to the GitHub release.
-Run it by hand with an existing tag to publish whatever of that version is not out yet.
+Run `scripts/bundle-frontend.sh` to copy the built frontend into the Python
+package. Run `scripts/refresh-fixtures.sh ../geomcore/tests/fixtures` to refresh the
+frontend reference fixtures from a geomcore checkout.
+
+## CI and releases
+
+- Pull requests and pushes to `main` run frontend, browser, Python, wheel
+  and Rust checks. A green `main` run deploys the build that passed the
+  browser tests to GitHub Pages. To redeploy, run **CI** manually on `main`.
+- To publish packages, update the changelog and both package manifests
+  (`python/pyproject.toml` and `clients/rust/Cargo.toml`). Regenerate
+  `clients/rust/Cargo.lock`, merge, and wait for CI on `main`. Tag that
+  commit `vX.Y.Z` and push the tag.
+- **Release** verifies the versions, builds and checks the wheel and source
+  distribution, then publishes to PyPI and crates.io using trusted publishing.
+  It attaches the published files to the GitHub release. If publishing only
+  partly succeeds, run **Release** manually on `main` with the same tag.
 
 ## Live demo
 

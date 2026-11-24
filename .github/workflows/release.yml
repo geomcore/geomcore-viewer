@@ -14,6 +14,12 @@ on:
 env:
   TAG: ${{ inputs.tag || github.ref_name }}
 
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+
 jobs:
   check:
     runs-on: ubuntu-latest
@@ -38,7 +44,7 @@ jobs:
           done
       - run: pip install pytest && pytest python/tests -q
         env: { PYTHONPATH: python }
-      - run: cargo test
+      - run: cargo test --locked --features geomcore
         working-directory: clients/rust
 
   build-python:
@@ -74,10 +80,11 @@ jobs:
         with: { skip-existing: true }
 
   publish-crates-io:
-    needs: check
+    needs: build-python
     runs-on: ubuntu-latest
     environment: crates-io
     permissions:
+      contents: read
       id-token: write
     defaults: { run: { working-directory: clients/rust } }
     steps:
@@ -100,7 +107,7 @@ jobs:
         if: steps.exists.outputs.published == 'false'
       - name: Publish the crate
         if: steps.exists.outputs.published == 'false'
-        run: cargo publish
+        run: cargo publish --locked
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
       # `cargo publish` deletes the .crate from target/package on recent Cargo

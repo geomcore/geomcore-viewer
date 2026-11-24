@@ -1,9 +1,13 @@
 # geomcore-viewer
 
-A live, geometry-aware browser viewer for [geomcore](https://github.com/geomcore/geomcore).
-Write geomcore code, call `view.add(...)`, and the curves, surfaces and
-intersection points appear — exactly, not as hand-sampled polylines — in a
-browser tab that updates as your script, debugger or notebook runs.
+Display [geomcore](https://github.com/geomcore/geomcore) geometry in your
+browser from a Python script, debugger or notebook.
+
+```sh
+pip install geomcore-viewer
+```
+
+The Python package supports geomcore 0.44 through 0.47.
 
 ```python
 # conics.py — run with: python conics.py   (re-run after every edit)
@@ -19,28 +23,10 @@ view.add(C, label="C")
 view.add(C.intersect(E), label="P")   # → P₁, P₂
 ```
 
-- **One verb.** `add` takes geomcore curves, surfaces and points, the result
-  objects of projections, intersections and curve extrema, and lists of those.
-- **Live, incremental.** The first `add` starts a background server and opens
-  the tab; later runs reuse it. Re-running a script swaps the scene in place;
-  inside one process (`pdb`, IPython, Jupyter) every `gv.add(x)` lands in the
-  same scene. Re-adding a label updates that object instead of duplicating it.
-- **Exact.** Objects travel as analytic definitions (frame + radii); the
-  viewer evaluates them with geomcore's own parametrizations. The plane view
-  clips lines, parabolas and hyperbolas to the window in closed form, so they
-  run edge to edge at any zoom; the 3D view draws them across 1.5× the
-  scene's extent.
-- **Static too.** `view.save("scene.json")`, then open the hosted viewer with
-  `?scene=<url>` or drag-drop the file onto it.
-
-## Install
-
-```sh
-pip install geomcore-viewer        # installs geomcore 0.44–0.47
-```
-
-The viewer requires geomcore 0.44 to 0.47, which has the current API
-(`point_at`, `focal_distance`, `half_angle`).
+The first `add` starts the local server and opens the viewer. Re-running
+the script replaces the scene in the same tab. Within a run, reusing a label
+updates that object. To share a scene, call `view.save("scene.json")` and
+drop the file onto the [hosted viewer](https://geomcore.github.io/geomcore-viewer/).
 
 ## API
 
@@ -49,8 +35,10 @@ The viewer requires geomcore 0.44 to 0.47, which has the current API
 | `gv.Viewer(title, view="auto"\|"2d"\|"3d", keep=False)` | a scene (new run) |
 | `view.add(*objs, label=, group=, color=, width=, dashed=, opacity=, u=, v=, foci=, asymptotes=, …)` | show objects → `Handle` / list |
 | `handle.update(color=…)`, `handle.remove()` | change or remove one object |
-| `view.pcurve(curve, on=surface)` | a `Line2D`, `Circle2D` (e.g. `cyl.curve_3d_to_uv(circle)`) or `(u, v)` pairs drawn on a surface already added |
+| `view.pcurve(curve, on=surface)` | a 2D curve or `(u, v)` pairs on a surface already added |
 | `view.polyline(pts)`, `view.mesh(v, i)`, `view.arrow(at, vec)`, `view.text(at, s)` | raw geometry |
+| `view.step(name)`, `view.batch()` | group objects into lesson steps or send them in one update |
+| `view.points(xyz, values=...)` | display a point cloud coloured by scalar values |
 | `view.clear()`, `view.save(path)`, `view.open()` | housekeeping |
 | `gv.add(...)`, `gv.clear()` | same, on the most recent viewer (handy in `pdb`) |
 | `geomcore-viewer serve` / `geomcore-viewer stop` | run / stop the server by hand |
